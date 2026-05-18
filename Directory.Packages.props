@@ -1,0 +1,31 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Crypto -->
+    <PackageVersion Include="BouncyCastle.Cryptography" Version="2.6.2" />
+
+    <!-- Ethereum / blockchain -->
+    <PackageVersion Include="Nethereum.Web3" Version="5.0.0" />
+    <PackageVersion Include="Nethereum.Signer" Version="5.0.0" />
+    <PackageVersion Include="Nethereum.HdWallet" Version="5.0.0" />
+
+    <!-- HTTP / JSON -->
+    <PackageVersion Include="System.Text.Json" Version="9.0.0" />
+
+    <!-- Transitive pin: Nethereum drags Newtonsoft.Json 11.0.2 (CVE GHSA-5crp-9r3c-p9vr) -->
+    <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
+
+    <!-- CLI -->
+    <PackageVersion Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+
+    <!-- Test stack -->
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+  </ItemGroup>
+</Project>

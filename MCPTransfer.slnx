@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MCPTransfer.Agent/MCPTransfer.Agent.csproj" />
+    <Project Path="src/MCPTransfer.Core/MCPTransfer.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MCPTransfer.Tests/MCPTransfer.Tests.csproj" />
+  </Folder>
+</Solution>

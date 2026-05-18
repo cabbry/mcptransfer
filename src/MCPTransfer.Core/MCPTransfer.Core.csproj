@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>MCPTransfer.Core</RootNamespace>
+    <AssemblyName>MCPTransfer.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BouncyCastle.Cryptography" />
+    <PackageReference Include="Nethereum.Signer" />
+    <PackageReference Include="Nethereum.Web3" />
+  </ItemGroup>
+
+</Project>

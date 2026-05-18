@@ -1,0 +1,56 @@
+## .NET
+bin/
+obj/
+out/
+*.user
+*.suo
+*.userprefs
+.vs/
+.vscode/
+.idea/
+
+## Build / packaging
+*.nupkg
+*.snupkg
+artifacts/
+publish/
+TestResults/
+coverage/
+*.coverage
+*.coverlet.json
+*.opencover.xml
+lcov.info
+
+## Logs / temp
+*.log
+*.tmp
+*.swp
+*~
+
+## Local config / secrets
+.env
+.env.*
+appsettings.Development.json
+appsettings.Local.json
+secrets.json
+*.pem
+*.key
+*.keystore
+local/
+
+## Agent state (private keys, indexing cursor)
+.mcptx/
+~/.mcptx/
+
+## Claude Code local state
+.claude/
+
+## OS
+Thumbs.db
+.DS_Store
+
+## Foundry (contracts/)
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+contracts/lib/
