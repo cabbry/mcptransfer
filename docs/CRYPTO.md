@@ -30,7 +30,7 @@ Cinq couches indépendantes, chacune avec un rôle précis :
 │  IDENTITÉ        │  secp256k1 keypair                       │
 │                  │  → adresse Ethereum (= identifiant)      │
 ├──────────────────┼──────────────────────────────────────────┤
-│  KEM HYBRIDE     │  ECDHE secp256k1  ⊕  ML-KEM-768          │
+│  KEM HYBRIDE     │  ECDHE secp256k1  ⊕  ML-KEM-768         │
 │                  │  ↓                                       │
 │                  │  HKDF-SHA256(ss1 ‖ ss2 ‖ info)           │
 │                  │  ↓                                       │
@@ -238,6 +238,37 @@ d'intégrité. À la lecture, si le tag ne match pas → erreur, on rejette.
 | ChaCha20-Poly1305 | Robuste sans AES-NI, plus simple | .NET 8+ uniquement en built-in, AES-NI plus rapide sur nos cibles | Pas nécessaire |
 | AES-GCM-SIV | Misuse-resistant (nonce reuse safe) | Pas built-in .NET, perf inférieure | Overkill |
 
+### Découpage systématique en chunks de 16 MiB
+
+**Le fichier n'est jamais chiffré d'un seul tenant.** Il est toujours
+découpé en blocs de **16 MiB** (constante `ChunkedAead.DefaultChunkSize`,
+voir Phase 1.5 de l'implémentation), même pour un fichier de quelques
+octets — il y a alors un unique chunk de petite taille.
+
+Pourquoi un découpage systématique :
+
+| Bénéfice | Détail |
+|----------|--------|
+| **Streaming** | Le chiffrement consomme l'entrée séquentiellement et yield chaque chunk. Pas de fichier entier chargé en RAM, indispensable pour les transferts multi-Go |
+| **Upload parallèle** | Chaque chunk est un objet IPFS indépendant — on peut paralléliser les uploads (et les downloads à la réception) avec un degré de parallélisme configurable |
+| **Reprise sur erreur** | Si un upload échoue à mi-parcours, on ne reprend que les chunks manquants au lieu de tout recommencer |
+| **Compatibilité IPFS / Pinata** | Reste sous les limites par requête des gateways grand public (typiquement < 25 MiB) |
+| **Authentification fine** | Chaque chunk porte son propre tag GCM — la corruption d'un seul octet est isolée et détectée localement |
+
+Pourquoi **16 MiB** précisément (et pas 1 MiB ou 256 MiB) :
+
+- En dessous de quelques MiB, l'overhead par chunk (nonce, tag, requête
+  IPFS, entrée dans le manifest) devient relativement important
+- Au-dessus de 64 MiB, la parallélisation devient moins utile et la
+  consommation mémoire par worker explose
+- 16 MiB est le sweet spot retenu par la plupart des systèmes
+  similaires (sweet spot empirique, ajustable via la constante)
+
+**Conséquence directe sur la cryptographie** : un index de chunk sur
+4 bytes (cf. construction du nonce ci-dessous) suffit à adresser
+2³² chunks de 16 MiB, soit **64 GiB par envoi**. Au-delà, on tournerait
+la clé — pour le POC on rejette simplement les fichiers > 64 GiB.
+
 ### La règle d'or de GCM : **nonce unique par (key, nonce)**
 
 Si on chiffre **deux fois** avec le même `(key, nonce)` :
@@ -258,8 +289,9 @@ nonce (12 bytes) = nonce_prefix (8 bytes random, par envoi)
 - Le préfixe aléatoire de 8 bytes est tiré une seule fois par envoi
   → probabilité de collision entre deux envois = 2⁻⁶⁴ (négligeable)
 - Le `chunk_idx` garantit l'unicité **à l'intérieur** d'un envoi
-- Capacité : 2³² chunks × 16 MiB = **64 GiB par envoi** avant de devoir
-  tourner la clé. Au-delà → on rejette le fichier
+- Capacité : 2³² chunks × 16 MiB (taille de chunk fixée plus haut) =
+  **64 GiB par envoi** avant que l'index ne sature. Au-delà → on rejette
+  le fichier (cap documenté, pas de rotation de clé en POC)
 
 ### Pourquoi pas un nonce purement aléatoire 12 bytes
 
@@ -291,7 +323,7 @@ EdDSA (Ed25519) serait *techniquement supérieur* :
 
 - Pas de malléabilité (ECDSA en a)
 - Déterministe (pas besoin d'aléa pendant la signature → moins de risque
-  d'implémentation foireuse)
+  d'implémentation erronée)
 - Plus rapide
 
 Mais **on signe aussi des transactions on-chain** (l'event `FileSent`
