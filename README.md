@@ -16,9 +16,9 @@ POC under construction.
 | Phase | Status |
 |-------|--------|
 | 0 — Bootstrap + crypto spike | done |
-| 1 — Envelope + chunking + IPFS | pending |
+| 1 — Envelope + chunking + IPFS (in-memory) + CLI | done |
 | 2 — Smart contracts (FileRegistry, KeyRegistry) | pending |
-| 3 — End-to-end agent CLI | pending |
+| 3 — Pinata IPFS client + Amoy chain client | pending |
 
 ## Repository layout
 
@@ -47,6 +47,28 @@ dotnet restore MCPTransfer.slnx
 dotnet build   MCPTransfer.slnx
 dotnet test    MCPTransfer.slnx
 ```
+
+## CLI quickstart (`mcptx`)
+
+```powershell
+# Generate a fresh hybrid identity at ~/.mcptx/identity.json
+dotnet run --project src/MCPTransfer.Agent -- keygen
+
+# Show the local agent's address and public keys
+dotnet run --project src/MCPTransfer.Agent -- whoami
+```
+
+Identity file format (plaintext JSON, see [src/MCPTransfer.Core/Storage/AgentIdentityFile.cs](src/MCPTransfer.Core/Storage/AgentIdentityFile.cs)):
+
+```json
+{
+  "mlkem_private_key": "base64 (2400 bytes encoded)",
+  "secp256k1_private_key": "0x... (32 bytes hex)",
+  "version": 1
+}
+```
+
+> POC limitation: private keys are stored unencrypted. Production deployments should wrap the file in a passphrase-derived encryption or hand off to an OS keyring / TPM-backed key store.
 
 ## Cryptographic construction (planned)
 
