@@ -50,6 +50,9 @@ dotnet test    MCPTransfer.slnx
 
 ## Cryptographic construction (planned)
 
+> Détails complets : [docs/CRYPTO.md](docs/CRYPTO.md)
+
+
 ```
                 Sender                                  Recipient
                    |                                        |
