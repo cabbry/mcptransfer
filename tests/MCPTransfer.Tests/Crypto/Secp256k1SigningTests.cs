@@ -101,7 +101,7 @@ public class Secp256k1SigningTests
         var validSig = signer.SignEcdsa(validHash);
 
         Assert.False(Secp256k1KeyPair.VerifyEcdsa(signer.PublicKeyCompressed, new byte[31], validSig));
-        Assert.False(Secp256k1KeyPair.VerifyEcdsa(signer.PublicKeyCompressed, validHash, new byte[63]));
+        Assert.False(Secp256k1KeyPair.VerifyEcdsa(signer.PublicKeyCompressed, validHash, new byte[Secp256k1KeyPair.SignatureByteLength - 1]));
         Assert.False(Secp256k1KeyPair.VerifyEcdsa(new byte[32], validHash, validSig));
     }
 
@@ -113,8 +113,9 @@ public class Secp256k1SigningTests
         var sig = signer.SignEcdsa(hash);
 
         // Flip s into its high counterpart: s' = n - s, which is mathematically
-        // equivalent but lies above n/2.
-        // We replicate the same math the producer uses to enforce low-s.
+        // equivalent but lies above n/2. The recovery byte v at sig[64] also
+        // flips with this transform, but we don't consult it during verify so
+        // any byte is acceptable here.
         var nBytes = Convert.FromHexString("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141");
         var sBytes = sig.AsSpan(32, 32).ToArray();
 
@@ -127,10 +128,31 @@ public class Secp256k1SigningTests
             nMinusS[i] = (byte)diff;
         }
 
-        var malleable = new byte[64];
+        var malleable = new byte[Secp256k1KeyPair.SignatureByteLength];
         sig.AsSpan(0, 32).CopyTo(malleable.AsSpan(0, 32));
         nMinusS.CopyTo(malleable, 32);
+        malleable[64] = sig[64]; // keep a valid-shape v byte; not consulted by verify
 
         Assert.False(Secp256k1KeyPair.VerifyEcdsa(signer.PublicKeyCompressed, hash, malleable));
+    }
+
+    [Fact]
+    public void Recover_RoundTrip_YieldsSignersPublicKey()
+    {
+        var signer = Secp256k1KeyPair.Generate();
+        var hash = RandomHash();
+        var sig = signer.SignEcdsa(hash);
+
+        var recoveredPk = Secp256k1KeyPair.Recover(hash, sig);
+
+        Assert.Equal(Secp256k1KeyPair.PublicKeyCompressedByteLength, recoveredPk.Length);
+        Assert.True(signer.PublicKeyCompressed.SequenceEqual(recoveredPk));
+    }
+
+    [Fact]
+    public void Recover_RejectsBadSignatureLength()
+    {
+        Assert.Throws<ArgumentException>(
+            () => Secp256k1KeyPair.Recover(new byte[32], new byte[Secp256k1KeyPair.SignatureByteLength - 1]));
     }
 }

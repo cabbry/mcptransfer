@@ -1,7 +1,7 @@
+using Nethereum.Signer;
 using Org.BouncyCastle.Asn1.Sec;
 using Org.BouncyCastle.Asn1.X9;
 using Org.BouncyCastle.Crypto.Agreement;
-using Org.BouncyCastle.Crypto.Digests;
 using Org.BouncyCastle.Crypto.Generators;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
@@ -14,15 +14,23 @@ namespace MCPTransfer.Core.Crypto;
 
 /// <summary>
 /// secp256k1 keypair: the classical half of the agent identity. Derives an
-/// Ethereum-compatible address and performs ECDH for the hybrid KEM.
+/// Ethereum-compatible address, performs ECDH for the hybrid KEM, and
+/// signs / verifies 65-byte Ethereum-style signatures (<c>r ‖ s ‖ v</c>).
 /// </summary>
+/// <remarks>
+/// Signing delegates to <c>Nethereum.Signer.EthECKey</c> so we get
+/// RFC 6979 with SHA-256 (the Ethereum-ecosystem standard), low-s
+/// normalization, and the recovery byte for free. Pubkey recovery from
+/// a signature (<see cref="Recover"/>) is also delegated. Key generation
+/// and ECDH stay on BouncyCastle.
+/// </remarks>
 public sealed class Secp256k1KeyPair
 {
     public const int PrivateKeyByteLength = 32;
     public const int PublicKeyCompressedByteLength = 33;
     public const int PublicKeyUncompressedByteLength = 65;
     public const int SharedSecretByteLength = 32;
-    public const int SignatureByteLength = 64;
+    public const int SignatureByteLength = 65;
     public const int MessageHashByteLength = 32;
 
     private static readonly Lazy<ECDomainParameters> CurveLazy = new(() =>
@@ -95,14 +103,7 @@ public sealed class Secp256k1KeyPair
 
     public EthereumAddress Address => _address ??= DeriveAddress();
 
-    private EthereumAddress DeriveAddress()
-    {
-        // Drop the leading 0x04 prefix byte of the uncompressed encoding; keccak the
-        // 64-byte (X || Y) coordinates and take the last 20 bytes.
-        ReadOnlySpan<byte> uncompressed = PublicKeyUncompressed;
-        var hash = Hashes.Keccak256(uncompressed[1..]);
-        return new EthereumAddress(hash.AsSpan(12, EthereumAddress.ByteLength));
-    }
+    private EthereumAddress DeriveAddress() => AddressFromPublicKey(PublicKeyUncompressed);
 
     /// <summary>
     /// Computes the 32-byte ECDH shared secret between this private key and the peer's
@@ -129,10 +130,10 @@ public sealed class Secp256k1KeyPair
     }
 
     /// <summary>
-    /// Sign a 32-byte Keccak-256 hash with deterministic ECDSA (RFC 6979)
-    /// using Keccak-256 as the inner hash to match Ethereum's behaviour.
-    /// Returns 64 bytes (<c>r ‖ s</c>) with <c>s</c> normalized to the lower
-    /// half of the curve order to avoid signature malleability.
+    /// Sign a 32-byte hash with deterministic ECDSA-secp256k1 (RFC 6979, SHA-256).
+    /// Returns 65 bytes (<c>r ‖ s ‖ v</c>) with <c>s</c> normalized to the lower half
+    /// of the curve order and <c>v</c> set to the 27/28 recovery byte that <see cref="Recover"/>
+    /// and Solidity's <c>ecrecover</c> consume.
     /// </summary>
     public byte[] SignEcdsa(ReadOnlySpan<byte> messageHash)
     {
@@ -141,29 +142,28 @@ public sealed class Secp256k1KeyPair
                 $"Message hash must be exactly {MessageHashByteLength} bytes (got {messageHash.Length}).",
                 nameof(messageHash));
 
-        var signer = new ECDsaSigner(new HMacDsaKCalculator(new KeccakDigest(256)));
-        signer.Init(true, new ECPrivateKeyParameters(_privateScalar, Curve));
-        var rs = signer.GenerateSignature(messageHash.ToArray());
-        var r = rs[0];
-        var s = rs[1];
+        // Nethereum performs the canonical low-s normalization and computes V.
+        var ethKey = new EthECKey(PrivateKey.ToArray(), isPrivate: true);
+        var sig = ethKey.SignAndCalculateV(messageHash.ToArray());
 
-        var halfOrder = Curve.N.ShiftRight(1);
-        if (s.CompareTo(halfOrder) > 0)
-            s = Curve.N.Subtract(s);
-
+        // R / S come from BigInteger.ToByteArray with no leading-zero padding;
+        // we explicitly left-pad into our fixed 32-byte slots.
         var result = new byte[SignatureByteLength];
-        var rBytes = BigIntegers.AsUnsignedByteArray(32, r);
-        var sBytes = BigIntegers.AsUnsignedByteArray(32, s);
-        Buffer.BlockCopy(rBytes, 0, result, 0, 32);
-        Buffer.BlockCopy(sBytes, 0, result, 32, 32);
+        PadLeftInto(sig.R, result.AsSpan(0, 32));
+        PadLeftInto(sig.S, result.AsSpan(32, 32));
+        result[64] = sig.V[0];
         return result;
     }
 
     /// <summary>
-    /// Verify a 64-byte ECDSA signature against a 32-byte message hash and a
-    /// peer's compressed or uncompressed public key. Returns <c>false</c> on
-    /// any structural problem; throws only on truly malformed inputs.
+    /// Verify a 65-byte signature against a 32-byte hash and the peer's public key
+    /// (compressed or uncompressed). Rejects high-s (malleable) signatures.
+    /// Returns <c>false</c> on any structural problem; never throws on bad input.
     /// </summary>
+    /// <remarks>
+    /// The recovery byte <c>v</c> is not consulted here — verification uses the
+    /// peer public key directly. <c>v</c> is used only by <see cref="Recover"/>.
+    /// </remarks>
     public static bool VerifyEcdsa(
         ReadOnlySpan<byte> publicKey,
         ReadOnlySpan<byte> messageHash,
@@ -177,6 +177,14 @@ public sealed class Secp256k1KeyPair
             return false;
         }
 
+        var r = new BigInteger(1, signature[..32].ToArray());
+        var s = new BigInteger(1, signature.Slice(32, 32).ToArray());
+
+        var halfOrder = Curve.N.ShiftRight(1);
+        if (s.CompareTo(halfOrder) > 0) return false;
+        if (r.SignValue <= 0 || s.SignValue <= 0) return false;
+        if (r.CompareTo(Curve.N) >= 0 || s.CompareTo(Curve.N) >= 0) return false;
+
         ECPoint peerPoint;
         try
         {
@@ -188,18 +196,33 @@ public sealed class Secp256k1KeyPair
         }
 
         var peerPub = new ECPublicKeyParameters(peerPoint, Curve);
-        var r = new BigInteger(1, signature[..32].ToArray());
-        var s = new BigInteger(1, signature.Slice(32, 32).ToArray());
-
-        // Reject high-s signatures: only canonical low-s form is accepted.
-        var halfOrder = Curve.N.ShiftRight(1);
-        if (s.CompareTo(halfOrder) > 0) return false;
-        if (r.SignValue <= 0 || s.SignValue <= 0) return false;
-        if (r.CompareTo(Curve.N) >= 0 || s.CompareTo(Curve.N) >= 0) return false;
-
-        var verifier = new ECDsaSigner(new HMacDsaKCalculator(new KeccakDigest(256)));
+        var verifier = new ECDsaSigner();
         verifier.Init(false, peerPub);
         return verifier.VerifySignature(messageHash.ToArray(), r, s);
+    }
+
+    /// <summary>
+    /// Recover the signer's 33-byte compressed public key from a 65-byte signature
+    /// and the 32-byte message hash. Mirrors Solidity's <c>ecrecover</c>.
+    /// </summary>
+    public static byte[] Recover(ReadOnlySpan<byte> messageHash, ReadOnlySpan<byte> signature)
+    {
+        if (messageHash.Length != MessageHashByteLength)
+            throw new ArgumentException(
+                $"Message hash must be exactly {MessageHashByteLength} bytes (got {messageHash.Length}).",
+                nameof(messageHash));
+        if (signature.Length != SignatureByteLength)
+            throw new ArgumentException(
+                $"Signature must be exactly {SignatureByteLength} bytes (got {signature.Length}).",
+                nameof(signature));
+
+        var r = signature[..32].ToArray();
+        var s = signature.Slice(32, 32).ToArray();
+        var v = new[] { signature[64] };
+
+        var ethSig = EthECDSASignatureFactory.FromComponents(r, s, v);
+        var recovered = EthECKey.RecoverFromSignature(ethSig, messageHash.ToArray());
+        return recovered.GetPubKey(true);
     }
 
     /// <summary>
@@ -220,5 +243,17 @@ public sealed class Secp256k1KeyPair
         var uncompressed = point.GetEncoded(compressed: false);
         var hash = Hashes.Keccak256(uncompressed.AsSpan(1));
         return new EthereumAddress(hash.AsSpan(12, EthereumAddress.ByteLength));
+    }
+
+    private static void PadLeftInto(byte[] source, Span<byte> destination)
+    {
+        if (source.Length > destination.Length)
+        {
+            throw new InvalidOperationException(
+                $"Cannot left-pad: source ({source.Length}) longer than destination ({destination.Length}).");
+        }
+        var offset = destination.Length - source.Length;
+        destination[..offset].Clear();
+        source.CopyTo(destination[offset..]);
     }
 }
