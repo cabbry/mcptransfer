@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using MCPTransfer.Core.Crypto;
 using MCPTransfer.Core.Storage;
 
@@ -8,13 +9,21 @@ static async Task<int> RunAsync(string[] args)
     if (args.Length == 0)
         return PrintUsage();
 
-    return args[0].ToLowerInvariant() switch
+    try
     {
-        "keygen" => await KeygenAsync(args),
-        "whoami" => await WhoamiAsync(args),
-        "help" or "--help" or "-h" => PrintUsage(),
-        var other => UnknownCommand(other),
-    };
+        return args[0].ToLowerInvariant() switch
+        {
+            "keygen" => await KeygenAsync(args),
+            "whoami" => await WhoamiAsync(args),
+            "help" or "--help" or "-h" => PrintUsage(),
+            var other => UnknownCommand(other),
+        };
+    }
+    catch (ArgumentException ex)
+    {
+        Console.Error.WriteLine($"Error: {ex.Message}");
+        return 1;
+    }
 }
 
 static async Task<int> KeygenAsync(string[] args)
@@ -40,6 +49,7 @@ static async Task<int> KeygenAsync(string[] args)
 static async Task<int> WhoamiAsync(string[] args)
 {
     var path = GetFlagValue(args, "--in") ?? AgentIdentityFile.DefaultPath;
+    var full = HasFlag(args, "--full");
 
     if (!File.Exists(path))
     {
@@ -49,10 +59,23 @@ static async Task<int> WhoamiAsync(string[] args)
     }
 
     var identity = await AgentIdentityFile.LoadAsync(path);
+    var mlkemBytes = identity.MlKem.PublicKey.Bytes;
+    var mlkemB64 = Convert.ToBase64String(mlkemBytes);
+    var mlkemSha = Convert.ToHexString(SHA256.HashData(mlkemBytes)).ToLowerInvariant()[..16];
+
     Console.WriteLine($"Address               : {identity.Address}");
     Console.WriteLine($"secp256k1 public key  : 0x{Convert.ToHexString(identity.Secp256k1.PublicKeyCompressed).ToLowerInvariant()}");
-    Console.WriteLine($"ML-KEM-768 public key : {Convert.ToBase64String(identity.MlKem.PublicKey.Bytes)}");
-    Console.WriteLine($"  (length: {identity.MlKem.PublicKey.Bytes.Length} bytes)");
+    if (full)
+    {
+        Console.WriteLine($"ML-KEM-768 public key : {mlkemB64}");
+        Console.WriteLine($"  ({mlkemBytes.Length} bytes)");
+    }
+    else
+    {
+        Console.WriteLine($"ML-KEM-768 public key : {mlkemB64[..20]}...{mlkemB64[^8..]}");
+        Console.WriteLine($"  ({mlkemBytes.Length} bytes, sha256:{mlkemSha}, use --full to print)");
+    }
+
     return 0;
 }
 
@@ -65,8 +88,9 @@ static int PrintUsage()
     Console.WriteLine("      Generate a new hybrid (secp256k1 + ML-KEM-768) identity.");
     Console.WriteLine("      Default path: ~/.mcptx/identity.json");
     Console.WriteLine();
-    Console.WriteLine("  mcptx whoami [--in PATH]");
+    Console.WriteLine("  mcptx whoami [--in PATH] [--full]");
     Console.WriteLine("      Print the Ethereum address and public keys of the local identity.");
+    Console.WriteLine("      The ML-KEM public key is truncated by default; pass --full to dump.");
     Console.WriteLine();
     Console.WriteLine("  mcptx help");
     Console.WriteLine("      Show this message.");
@@ -82,10 +106,22 @@ static int UnknownCommand(string verb)
 
 static string? GetFlagValue(string[] args, string flag)
 {
-    for (var i = 1; i < args.Length - 1; i++)
+    for (var i = 1; i < args.Length; i++)
     {
-        if (string.Equals(args[i], flag, StringComparison.Ordinal))
-            return args[i + 1];
+        if (!string.Equals(args[i], flag, StringComparison.Ordinal))
+            continue;
+
+        if (i + 1 >= args.Length)
+            throw new ArgumentException($"Missing value after {flag}.");
+
+        var next = args[i + 1];
+        if (next.StartsWith("--", StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                $"Expected a value after {flag}, got '{next}' (which looks like another flag).");
+        }
+
+        return next;
     }
     return null;
 }
