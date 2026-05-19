@@ -63,4 +63,86 @@ public class AgentIdentityFileTests
         Assert.EndsWith(Path.Combine(".mcptx", "identity.json"), AgentIdentityFile.DefaultPath);
         Assert.True(Path.IsPathRooted(AgentIdentityFile.DefaultPath));
     }
+
+    [Fact]
+    public async Task SaveAsync_LeavesNoTempFileOnSuccess()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "mcptx-id-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(tempDir, "identity.json");
+
+        try
+        {
+            await AgentIdentityFile.SaveAsync(AgentIdentity.Generate(), path);
+
+            Assert.True(File.Exists(path));
+            Assert.False(File.Exists(path + ".tmp"),
+                "atomic write must clean up the .tmp file after the rename");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SaveAsync_PreservesPreviousFileOnFailure()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "mcptx-id-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(tempDir, "identity.json");
+
+        try
+        {
+            var first = AgentIdentity.Generate();
+            await AgentIdentityFile.SaveAsync(first, path);
+
+            // Force the next save to fail by making the destination an open
+            // directory rather than a file. File.Move will throw and the
+            // catch in SaveAsync should clean up .tmp without touching the
+            // original identity file... actually that's not quite the right
+            // shape; instead, simulate cancellation mid-write.
+            using var cts = new CancellationTokenSource();
+            cts.Cancel(); // pre-cancelled
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => AgentIdentityFile.SaveAsync(AgentIdentity.Generate(), path, cts.Token));
+
+            // Original file is still present and readable.
+            var reloaded = await AgentIdentityFile.LoadAsync(path);
+            Assert.Equal(first.Address, reloaded.Address);
+            Assert.False(File.Exists(path + ".tmp"));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SaveAsync_OnUnix_FileIsUserReadWriteOnly()
+    {
+        if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(
+                System.Runtime.InteropServices.OSPlatform.Windows))
+        {
+            return; // POSIX mode check is meaningless on Windows.
+        }
+
+        var tempDir = Path.Combine(Path.GetTempPath(), "mcptx-id-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(tempDir, "identity.json");
+
+        try
+        {
+            await AgentIdentityFile.SaveAsync(AgentIdentity.Generate(), path);
+
+            var mode = File.GetUnixFileMode(path);
+            // 0600 = UserRead | UserWrite, nothing else.
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, mode);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
 }

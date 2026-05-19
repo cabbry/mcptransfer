@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using MCPTransfer.Core.Crypto;
 
@@ -23,6 +24,13 @@ public static class AgentIdentityFile
         ".mcptx",
         "identity.json");
 
+    /// <summary>
+    /// Persist <paramref name="identity"/> atomically: the bytes are written
+    /// to a sibling <c>.tmp</c> file, the permissions are tightened on POSIX
+    /// systems, and only then the file is renamed into place. A crash or
+    /// cancellation mid-write leaves the previous identity file (if any)
+    /// untouched.
+    /// </summary>
     public static async Task SaveAsync(
         AgentIdentity identity,
         string path,
@@ -36,7 +44,50 @@ public static class AgentIdentityFile
             Directory.CreateDirectory(directory);
 
         var bytes = Serialize(identity);
-        await File.WriteAllBytesAsync(path, bytes, cancellationToken).ConfigureAwait(false);
+        var tempPath = path + ".tmp";
+
+        try
+        {
+            await File.WriteAllBytesAsync(tempPath, bytes, cancellationToken).ConfigureAwait(false);
+            // Restrict permissions on the temp file BEFORE the rename so the
+            // final file is never readable by other users, even momentarily.
+            TryRestrictUnixPermissions(tempPath);
+            File.Move(tempPath, path, overwrite: true);
+        }
+        catch
+        {
+            try
+            {
+                if (File.Exists(tempPath))
+                    File.Delete(tempPath);
+            }
+            catch
+            {
+                // Best-effort cleanup; ignore secondary errors.
+            }
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// On POSIX (Linux, macOS), tighten the file mode to <c>0600</c> so
+    /// other local users cannot read the plaintext private keys. No-op on
+    /// Windows (file inherits ACLs from the user profile directory, which
+    /// is already user-only by default).
+    /// </summary>
+    private static void TryRestrictUnixPermissions(string path)
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return;
+        try
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        catch
+        {
+            // Best-effort: some filesystems (e.g. FAT, certain network mounts)
+            // do not support POSIX modes; silently continue.
+        }
     }
 
     public static async Task<AgentIdentity> LoadAsync(
