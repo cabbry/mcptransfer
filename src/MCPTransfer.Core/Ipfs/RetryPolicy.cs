@@ -43,7 +43,8 @@ public sealed record RetryPolicy
         return exception is not OperationCanceledException
             && exception is not ArgumentException
             && exception is not KeyNotFoundException
-            && exception is not ObjectDisposedException;
+            && exception is not ObjectDisposedException
+            && exception is not UnauthorizedAccessException;
     }
 
     public static RetryPolicy Default { get; } = new();

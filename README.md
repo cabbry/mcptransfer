@@ -16,9 +16,9 @@ POC under construction.
 | Phase | Status |
 |-------|--------|
 | 0 — Bootstrap + crypto spike | done |
-| 1 — Envelope + chunking + IPFS (in-memory) + CLI | done |
+| 1 — Envelope + chunking + IPFS (in-memory + Pinata) + CLI | done |
 | 2 — Smart contracts (FileRegistry, KeyRegistry) | pending |
-| 3 — Pinata IPFS client + Amoy chain client | pending |
+| 3 — Amoy chain client + CLI send/watch/receive | pending |
 
 ## Repository layout
 
@@ -69,6 +69,36 @@ Identity file format (plaintext JSON, see [src/MCPTransfer.Core/Storage/AgentIde
 ```
 
 > POC limitation: private keys are stored unencrypted. Production deployments should wrap the file in a passphrase-derived encryption or hand off to an OS keyring / TPM-backed key store.
+
+## Pinata IPFS client
+
+For real network IPFS pinning (vs the in-memory client used by tests):
+
+1. Sign up at [https://app.pinata.cloud](https://app.pinata.cloud) (free tier: 1 GB)
+2. Generate a JWT in **API Keys → New Key**
+3. Compose with the retry decorator (Phase 1.9):
+
+```csharp
+var jwt = Environment.GetEnvironmentVariable("PINATA_JWT")
+    ?? throw new InvalidOperationException("PINATA_JWT not set");
+
+using var pinata = new PinataIpfsClient(jwt);
+var ipfs = new RetryingIpfsClient(pinata, RetryPolicy.Default);
+
+var writer = new EnvelopeWriter(ipfs);
+var reader = new EnvelopeReader(ipfs);
+```
+
+The `RetryingIpfsClient` wrapping absorbs transient 429 / 5xx / network errors with exponential backoff + jitter. Auth failures (401/403) and not-found (404) are surfaced immediately as permanent.
+
+To run the live integration test against your Pinata account:
+
+```powershell
+$env:PINATA_JWT = "eyJ..."
+dotnet test --filter IntegrationTest_RealPinata
+```
+
+Without the env var, the integration test is skipped silently.
 
 ## Cryptographic construction (planned)
 
