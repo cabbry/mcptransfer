@@ -124,7 +124,9 @@ public sealed class Manifest
         CreatedAtUnixSeconds = createdAtUnixSeconds;
         Filename = filename;
         MimeType = mimeType;
-        Chunks = chunks is ManifestChunkEntry[] arr ? arr : chunks.ToArray();
+        // Always snapshot: if the caller passes a ManifestChunkEntry[], they can
+        // still mutate it afterwards and we'd silently inherit the change.
+        Chunks = chunks.ToArray();
     }
 
     /// <summary>

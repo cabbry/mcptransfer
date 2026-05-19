@@ -250,6 +250,25 @@ public class ManifestTests
     }
 
     [Fact]
+    public void Constructor_TakesDefensiveSnapshotOfChunksArray()
+    {
+        var tag = new byte[ChunkedAead.TagByteLength];
+        var entry0 = new ManifestChunkEntry(0, "cid0", tag, 10);
+        var entry1 = new ManifestChunkEntry(1, "cid1", tag, 10);
+        var chunks = new[] { entry0, entry1 };
+
+        var manifest = BuildWithChunks(chunks, totalSize: 20);
+
+        // Replace an entry in the caller's array. The manifest must keep the
+        // snapshot it took at construction time.
+        var rogue = new ManifestChunkEntry(0, "tampered", tag, 999);
+        chunks[0] = rogue;
+
+        Assert.Same(entry0, manifest.Chunks[0]);
+        Assert.Equal("cid0", manifest.Chunks[0].Cid);
+    }
+
+    [Fact]
     public void Constructor_RejectsMismatchedTotalSize()
     {
         var tag = new byte[ChunkedAead.TagByteLength];
