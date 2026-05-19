@@ -56,6 +56,11 @@ public sealed class MlKemPublicKey
 
 /// <summary>
 /// Output of <see cref="MlKemPublicKey.Encapsulate"/>: the ciphertext to
-/// transmit and the shared secret derived locally.
+/// transmit and the shared secret derived locally. Both are exposed as
+/// <see cref="ReadOnlyMemory{T}"/> so callers cannot mutate the stored
+/// bytes; the shared secret in particular must be treated as key
+/// material (zero on disposal).
 /// </summary>
-public readonly record struct KemEncapsulation(byte[] Ciphertext, byte[] SharedSecret);
+public readonly record struct KemEncapsulation(
+    ReadOnlyMemory<byte> Ciphertext,
+    ReadOnlyMemory<byte> SharedSecret);

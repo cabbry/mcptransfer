@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -46,15 +47,15 @@ public static class HybridKem
 
         var kem = recipient.MlKem.Encapsulate();
 
-        var derivedKey = DeriveKey(ssEcdh, kem.SharedSecret, additionalContext);
+        var derivedKey = DeriveKey(ssEcdh, kem.SharedSecret.Span, additionalContext);
 
         // The ECDH and ML-KEM shared secrets are no longer needed.
         CryptographicOperations.ZeroMemory(ssEcdh);
-        CryptographicOperations.ZeroMemory(kem.SharedSecret);
+        WipeIfArrayBacked(kem.SharedSecret);
 
         return new HybridKemEncapsulation(
             ephemeralSecp256k1PublicKey: ephemeral.PublicKeyCompressed.ToArray(),
-            kemCiphertext: kem.Ciphertext,
+            kemCiphertext: kem.Ciphertext.ToArray(),
             derivedKey: derivedKey);
     }
 
@@ -80,6 +81,17 @@ public static class HybridKem
         CryptographicOperations.ZeroMemory(ssMlKem);
 
         return derivedKey;
+    }
+
+    /// <summary>
+    /// Best-effort zero of a <see cref="ReadOnlyMemory{T}"/> region that
+    /// is known to be array-backed (which is the case for everything
+    /// produced inside this library). Silently no-ops if not.
+    /// </summary>
+    private static void WipeIfArrayBacked(ReadOnlyMemory<byte> region)
+    {
+        if (MemoryMarshal.TryGetArray<byte>(region, out var seg) && seg.Array is not null)
+            CryptographicOperations.ZeroMemory(seg.Array.AsSpan(seg.Offset, seg.Count));
     }
 
     private static byte[] DeriveKey(

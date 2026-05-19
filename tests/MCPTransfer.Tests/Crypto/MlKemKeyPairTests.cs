@@ -30,8 +30,8 @@ public class MlKemKeyPairTests
         Assert.Equal(MlKemPublicKey.CiphertextByteLength, encapsulation.Ciphertext.Length);
         Assert.Equal(MlKemPublicKey.SharedSecretByteLength, encapsulation.SharedSecret.Length);
 
-        var recovered = kp.Decapsulate(encapsulation.Ciphertext);
-        Assert.Equal(encapsulation.SharedSecret, recovered);
+        var recovered = kp.Decapsulate(encapsulation.Ciphertext.Span);
+        Assert.Equal(encapsulation.SharedSecret.ToArray(), recovered);
     }
 
     [Fact]
@@ -45,8 +45,8 @@ public class MlKemKeyPairTests
 
         // And it still works for the encaps/decaps cycle.
         var encapsulation = rebuilt.Encapsulate();
-        var ss = kp.Decapsulate(encapsulation.Ciphertext);
-        Assert.Equal(encapsulation.SharedSecret, ss);
+        var ss = kp.Decapsulate(encapsulation.Ciphertext.Span);
+        Assert.Equal(encapsulation.SharedSecret.ToArray(), ss);
     }
 
     [Fact]
@@ -61,8 +61,8 @@ public class MlKemKeyPairTests
 
         // Cross-decapsulation: ct from original.PublicKey decapsulates with restored.
         var encapsulation = original.PublicKey.Encapsulate();
-        var ss = restored.Decapsulate(encapsulation.Ciphertext);
-        Assert.Equal(encapsulation.SharedSecret, ss);
+        var ss = restored.Decapsulate(encapsulation.Ciphertext.Span);
+        Assert.Equal(encapsulation.SharedSecret.ToArray(), ss);
     }
 
     [Fact]
