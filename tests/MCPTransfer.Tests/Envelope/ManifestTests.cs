@@ -231,6 +231,53 @@ public class ManifestTests
         Assert.Throws<ArgumentException>(() => BuildWithNoncePrefixLength(12));
     }
 
+    [Theory]
+    [InlineData("{}")]                                          // Missing everything
+    [InlineData("{\"version\": 1}")]                            // Missing all but version
+    [InlineData("{\"version\": \"not-an-int\"}")]               // Wrong type for version
+    [InlineData("not-json-at-all")]                             // Not valid JSON
+    [InlineData("{\"version\": 1, \"chunks\":")]                // Truncated JSON
+    public void FromJsonBytes_RejectsMalformedInputs(string body)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(body);
+        // Either System.Text.Json throws on parse or our code throws on missing fields.
+        // Both are acceptable — we only require that we never return a bogus Manifest.
+        Assert.ThrowsAny<Exception>(() => Manifest.FromJsonBytes(bytes));
+    }
+
+    [Fact]
+    public void FromJsonBytes_RejectsMissingSenderProperty()
+    {
+        var canonical = BuildSample().ToCanonicalJsonBytes();
+        var asString = System.Text.Encoding.UTF8.GetString(canonical);
+
+        // Strip the sender property.
+        var withoutSender = System.Text.RegularExpressions.Regex.Replace(
+            asString, "\"sender\":\"[^\"]*\",", "");
+
+        Assert.ThrowsAny<Exception>(
+            () => Manifest.FromJsonBytes(System.Text.Encoding.UTF8.GetBytes(withoutSender)));
+    }
+
+    [Fact]
+    public void FromJsonBytes_RejectsChunkWithBadTagLength()
+    {
+        // Build a valid canonical manifest, then surgically replace one of the
+        // base64 tags with a base64 of a shorter byte sequence. The
+        // ManifestChunkEntry ctor invoked during parsing must reject it.
+        var canonical = BuildSample().ToCanonicalJsonBytes();
+        var asString = System.Text.Encoding.UTF8.GetString(canonical);
+
+        var shortTag = Convert.ToBase64String(new byte[ChunkedAead.TagByteLength - 1]);
+        var corrupted = System.Text.RegularExpressions.Regex.Replace(
+            asString,
+            "\"tag\":\"[A-Za-z0-9+/=]+\"",
+            $"\"tag\":\"{shortTag}\"");
+
+        Assert.ThrowsAny<Exception>(
+            () => Manifest.FromJsonBytes(System.Text.Encoding.UTF8.GetBytes(corrupted)));
+    }
+
     [Fact]
     public void Constructor_RejectsEmptyChunks()
     {

@@ -262,6 +262,38 @@ public class EnvelopeEndToEndTests
     }
 
     [Fact]
+    public async Task EnvelopeWriter_AcceptsInputExactlyAtCap()
+    {
+        var alice = AgentIdentity.Generate();
+        var bob = AgentIdentity.Generate();
+        var ipfs = new InMemoryIpfsClient();
+
+        // Cap = 64; input is exactly 64 bytes -> must succeed.
+        var writer = new EnvelopeWriter(ipfs) { MaxPlaintextBytes = 64 };
+        using var input = new MemoryStream(RandomNumberGenerator.GetBytes(64));
+
+        var result = await writer.SendAsync(
+            input, alice, bob.ToPublic(), chunkSize: TestChunkSize);
+
+        Assert.Equal(64, result.SignedManifest.Manifest.TotalSize);
+    }
+
+    [Fact]
+    public async Task EnvelopeWriter_RejectsInputOneByteAboveCap()
+    {
+        var alice = AgentIdentity.Generate();
+        var bob = AgentIdentity.Generate();
+        var ipfs = new InMemoryIpfsClient();
+
+        // Off-by-one: cap = 64, input = 65 bytes -> must throw.
+        var writer = new EnvelopeWriter(ipfs) { MaxPlaintextBytes = 64 };
+        using var input = new MemoryStream(new byte[65]);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => writer.SendAsync(input, alice, bob.ToPublic(), chunkSize: TestChunkSize));
+    }
+
+    [Fact]
     public async Task EnvelopeWriter_RejectsNonSeekableInputAboveCap()
     {
         var alice = AgentIdentity.Generate();

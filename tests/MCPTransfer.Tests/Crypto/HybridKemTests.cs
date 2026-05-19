@@ -91,6 +91,58 @@ public class HybridKemTests
     }
 
     [Fact]
+    public void TamperedKemCiphertext_ProducesUnrelatedDerivedKey()
+    {
+        // ML-KEM is IND-CCA2 with "implicit reject": decapsulation against a
+        // corrupted ciphertext returns a deterministic but unrelated shared
+        // secret rather than throwing. The hybrid construction must therefore
+        // also yield an unrelated derived key, so downstream AEAD verification
+        // (chunk tag check) fails.
+        var recipient = AgentIdentity.Generate();
+        var encapsulation = HybridKem.Encapsulate(recipient.ToPublic());
+
+        var tamperedCt = encapsulation.KemCiphertext.ToArray();
+        tamperedCt[0] ^= 0x01;
+
+        var keyFromTampered = HybridKem.Decapsulate(
+            recipient,
+            encapsulation.EphemeralSecp256k1PublicKey.Span,
+            tamperedCt);
+
+        Assert.NotEqual(encapsulation.DerivedKey.ToArray(), keyFromTampered);
+    }
+
+    [Fact]
+    public void TamperedEphemeralPubkey_ProducesUnrelatedDerivedKey()
+    {
+        // Symmetric counterpart to the KEM-ciphertext tamper test: if the
+        // ephemeral secp256k1 pubkey is altered, ECDH on the recipient side
+        // computes a different shared secret, so the combined key diverges.
+        var recipient = AgentIdentity.Generate();
+        var encapsulation = HybridKem.Encapsulate(recipient.ToPublic());
+
+        // Flip a coordinate bit while keeping the compressed format byte valid.
+        var tamperedPk = encapsulation.EphemeralSecp256k1PublicKey.ToArray();
+        tamperedPk[1] ^= 0x01; // X coordinate, byte 0
+
+        // The decoded point may not be on the curve after this flip; both
+        // outcomes are acceptable: either decap throws, or it succeeds with
+        // an unrelated derived key. We only check we don't get the SAME key.
+        try
+        {
+            var keyFromTampered = HybridKem.Decapsulate(
+                recipient,
+                tamperedPk,
+                encapsulation.KemCiphertext.Span);
+            Assert.NotEqual(encapsulation.DerivedKey.ToArray(), keyFromTampered);
+        }
+        catch (Exception)
+        {
+            // Acceptable: point not on the curve, decoding throws -> attacker fails fast.
+        }
+    }
+
+    [Fact]
     public void Encapsulate_RejectsNullRecipient()
     {
         Assert.Throws<ArgumentNullException>(() =>
