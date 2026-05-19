@@ -23,6 +23,10 @@ public sealed class RetryingIpfsClient : IIpfsClient
             throw new ArgumentException(
                 $"RetryPolicy.MaxAttempts must be at least 1 (got {_policy.MaxAttempts}).",
                 nameof(policy));
+        if (_policy.JitterFraction is < 0.0 or > 1.0)
+            throw new ArgumentException(
+                $"RetryPolicy.JitterFraction must be in [0, 1] (got {_policy.JitterFraction}).",
+                nameof(policy));
     }
 
     public Task<string> PinAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken = default)
@@ -50,7 +54,7 @@ public sealed class RetryingIpfsClient : IIpfsClient
                 && _policy.ShouldRetry(ex))
             {
                 attempt++;
-                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(ApplyJitter(delay, _policy.JitterFraction), cancellationToken).ConfigureAwait(false);
 
                 var nextMs = delay.TotalMilliseconds * _policy.BackoffMultiplier;
                 if (nextMs > _policy.MaxDelay.TotalMilliseconds)
@@ -58,5 +62,23 @@ public sealed class RetryingIpfsClient : IIpfsClient
                 delay = TimeSpan.FromMilliseconds(nextMs);
             }
         }
+    }
+
+    /// <summary>
+    /// Returns <paramref name="delay"/> scaled by a uniformly random factor
+    /// in <c>[1 − jitter, 1 + jitter]</c>. With <paramref name="jitter"/> = 0
+    /// the delay is returned unchanged (deterministic mode for tests).
+    /// </summary>
+    internal static TimeSpan ApplyJitter(TimeSpan delay, double jitter)
+    {
+        if (jitter <= 0.0)
+            return delay;
+
+        // Uniform in [-jitter, +jitter], scaled around 1.
+        var multiplier = 1.0 + (Random.Shared.NextDouble() * 2.0 - 1.0) * jitter;
+        var jitteredMs = delay.TotalMilliseconds * multiplier;
+        if (jitteredMs < 0)
+            jitteredMs = 0;
+        return TimeSpan.FromMilliseconds(jitteredMs);
     }
 }

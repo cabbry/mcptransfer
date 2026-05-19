@@ -11,4 +11,8 @@
     <PackageReference Include="Nethereum.Web3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="MCPTransfer.Tests" />
+  </ItemGroup>
+
 </Project>

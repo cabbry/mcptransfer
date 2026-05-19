@@ -20,6 +20,16 @@ public sealed record RetryPolicy
     public double BackoffMultiplier { get; init; } = 2.0;
 
     /// <summary>
+    /// Random spread applied to each computed delay, as a fraction in
+    /// <c>[0, 1]</c>. The actual sleep is uniformly sampled from
+    /// <c>delay × [1 − jitter, 1 + jitter]</c>. Defends against the
+    /// thundering-herd pattern where several parallel chunks retry in
+    /// lockstep and re-saturate the same gateway. Default: <c>0.2</c> (±20%).
+    /// Set to <c>0</c> for deterministic timing (tests).
+    /// </summary>
+    public double JitterFraction { get; init; } = 0.2;
+
+    /// <summary>
     /// Predicate that decides whether a given exception is worth retrying.
     /// Defaults to <see cref="DefaultShouldRetry"/>, which skips obvious
     /// non-transient errors (cancellation, programming errors, not-found).

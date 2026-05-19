@@ -11,6 +11,7 @@ public class RetryingIpfsClientTests
         InitialDelay = TimeSpan.FromMilliseconds(1),
         MaxDelay = TimeSpan.FromMilliseconds(4),
         BackoffMultiplier = 2.0,
+        JitterFraction = 0, // deterministic timing for assertions
     };
 
     [Fact]
@@ -122,6 +123,53 @@ public class RetryingIpfsClientTests
         var inner = new ScriptedIpfsClient();
         var policy = new RetryPolicy { MaxAttempts = 0 };
         Assert.Throws<ArgumentException>(() => new RetryingIpfsClient(inner, policy));
+    }
+
+    [Fact]
+    public void Constructor_RejectsOutOfRangeJitterFraction()
+    {
+        var inner = new ScriptedIpfsClient();
+        Assert.Throws<ArgumentException>(
+            () => new RetryingIpfsClient(inner, new RetryPolicy { JitterFraction = -0.1 }));
+        Assert.Throws<ArgumentException>(
+            () => new RetryingIpfsClient(inner, new RetryPolicy { JitterFraction = 1.1 }));
+    }
+
+    [Fact]
+    public void ApplyJitter_WithZeroFraction_ReturnsInputUnchanged()
+    {
+        var d = TimeSpan.FromSeconds(2);
+        Assert.Equal(d, RetryingIpfsClient.ApplyJitter(d, 0.0));
+    }
+
+    [Fact]
+    public void ApplyJitter_WithFraction_StaysWithinBounds()
+    {
+        var d = TimeSpan.FromSeconds(2);
+        const double jitter = 0.2;
+        // Run many samples; every one must lie in [d * (1 - jitter), d * (1 + jitter)].
+        for (var i = 0; i < 200; i++)
+        {
+            var jittered = RetryingIpfsClient.ApplyJitter(d, jitter);
+            Assert.InRange(
+                jittered.TotalMilliseconds,
+                d.TotalMilliseconds * (1 - jitter) - 0.001,
+                d.TotalMilliseconds * (1 + jitter) + 0.001);
+        }
+    }
+
+    [Fact]
+    public void ApplyJitter_WithFraction_DistributesAcrossRange()
+    {
+        // Ensure the multiplier is actually random, not stuck at a single value.
+        var d = TimeSpan.FromSeconds(2);
+        var samples = new HashSet<double>();
+        for (var i = 0; i < 50; i++)
+        {
+            samples.Add(Math.Round(RetryingIpfsClient.ApplyJitter(d, 0.5).TotalMilliseconds, 1));
+        }
+        Assert.True(samples.Count > 10,
+            $"Expected jitter to spread samples; got only {samples.Count} distinct values.");
     }
 
     [Fact]
