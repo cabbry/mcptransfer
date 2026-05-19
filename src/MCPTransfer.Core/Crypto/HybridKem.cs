@@ -42,13 +42,13 @@ public static class HybridKem
         ArgumentNullException.ThrowIfNull(recipient);
 
         var ephemeral = Secp256k1KeyPair.Generate();
-        var ssEcdh = ephemeral.Ecdh(recipient.Secp256k1PublicKeyCompressed);
+        var ssEcdh = ephemeral.Ecdh(recipient.Secp256k1PublicKeyCompressed.Span);
 
         var kem = recipient.MlKem.Encapsulate();
 
         var derivedKey = DeriveKey(ssEcdh, kem.SharedSecret, additionalContext);
 
-        // The ECDH shared secret is no longer needed; wipe it from managed memory.
+        // The ECDH and ML-KEM shared secrets are no longer needed.
         CryptographicOperations.ZeroMemory(ssEcdh);
         CryptographicOperations.ZeroMemory(kem.SharedSecret);
 
@@ -114,19 +114,58 @@ public static class HybridKem
 /// locally-derived symmetric key. The first two travel in the manifest; the
 /// last stays on the sender's machine and is used to encrypt chunks.
 /// </summary>
-public sealed class HybridKemEncapsulation
+/// <remarks>
+/// Implements <see cref="IDisposable"/> so the derived key is zeroed from
+/// managed memory on scope exit. Use <c>using var encap = HybridKem.Encapsulate(...);</c>.
+/// </remarks>
+public sealed class HybridKemEncapsulation : IDisposable
 {
-    public byte[] EphemeralSecp256k1PublicKey { get; }
-    public byte[] KemCiphertext { get; }
-    public byte[] DerivedKey { get; }
+    private readonly byte[] _ephemeralSecp256k1PublicKey;
+    private readonly byte[] _kemCiphertext;
+    private readonly byte[] _derivedKey;
+    private bool _disposed;
 
-    public HybridKemEncapsulation(
+    public ReadOnlyMemory<byte> EphemeralSecp256k1PublicKey
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _ephemeralSecp256k1PublicKey;
+        }
+    }
+
+    public ReadOnlyMemory<byte> KemCiphertext
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _kemCiphertext;
+        }
+    }
+
+    public ReadOnlyMemory<byte> DerivedKey
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _derivedKey;
+        }
+    }
+
+    internal HybridKemEncapsulation(
         byte[] ephemeralSecp256k1PublicKey,
         byte[] kemCiphertext,
         byte[] derivedKey)
     {
-        EphemeralSecp256k1PublicKey = ephemeralSecp256k1PublicKey;
-        KemCiphertext = kemCiphertext;
-        DerivedKey = derivedKey;
+        _ephemeralSecp256k1PublicKey = ephemeralSecp256k1PublicKey;
+        _kemCiphertext = kemCiphertext;
+        _derivedKey = derivedKey;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        CryptographicOperations.ZeroMemory(_derivedKey);
+        _disposed = true;
     }
 }

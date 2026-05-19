@@ -8,16 +8,19 @@ namespace MCPTransfer.Core.Crypto;
 /// </summary>
 public sealed class AgentPublicIdentity
 {
+    private readonly byte[] _secp256k1PublicKeyCompressed;
+
     public EthereumAddress Address { get; }
 
-    /// <summary>33-byte compressed secp256k1 public key.</summary>
-    public byte[] Secp256k1PublicKeyCompressed { get; }
+    /// <summary>33-byte compressed secp256k1 public key, exposed as
+    /// <see cref="ReadOnlyMemory{T}"/> so callers cannot mutate the
+    /// stored bytes.</summary>
+    public ReadOnlyMemory<byte> Secp256k1PublicKeyCompressed => _secp256k1PublicKeyCompressed;
 
     public MlKemPublicKey MlKem { get; }
 
-    public AgentPublicIdentity(byte[] secp256k1PublicKeyCompressed, MlKemPublicKey mlKem)
+    public AgentPublicIdentity(ReadOnlyMemory<byte> secp256k1PublicKeyCompressed, MlKemPublicKey mlKem)
     {
-        ArgumentNullException.ThrowIfNull(secp256k1PublicKeyCompressed);
         ArgumentNullException.ThrowIfNull(mlKem);
 
         if (secp256k1PublicKeyCompressed.Length != Secp256k1KeyPair.PublicKeyCompressedByteLength)
@@ -29,9 +32,9 @@ public sealed class AgentPublicIdentity
                 nameof(secp256k1PublicKeyCompressed));
         }
 
-        Secp256k1PublicKeyCompressed = (byte[])secp256k1PublicKeyCompressed.Clone();
+        _secp256k1PublicKeyCompressed = secp256k1PublicKeyCompressed.ToArray();
         MlKem = mlKem;
-        Address = Secp256k1KeyPair.AddressFromPublicKey(Secp256k1PublicKeyCompressed);
+        Address = Secp256k1KeyPair.AddressFromPublicKey(_secp256k1PublicKeyCompressed);
     }
 
     /// <summary>

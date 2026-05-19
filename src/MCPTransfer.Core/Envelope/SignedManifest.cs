@@ -18,11 +18,13 @@ namespace MCPTransfer.Core.Envelope;
 /// </remarks>
 public sealed class SignedManifest
 {
-    public Manifest Manifest { get; }
-    public byte[] SenderSecp256k1PublicKey { get; }
-    public byte[] Signature { get; }
-
+    private readonly byte[] _senderPublicKey;
+    private readonly byte[] _signature;
     private readonly byte[] _signedBytes;
+
+    public Manifest Manifest { get; }
+    public ReadOnlyMemory<byte> SenderSecp256k1PublicKey => _senderPublicKey;
+    public ReadOnlyMemory<byte> Signature => _signature;
 
     private SignedManifest(
         Manifest manifest,
@@ -31,8 +33,8 @@ public sealed class SignedManifest
         byte[] signedBytes)
     {
         Manifest = manifest;
-        SenderSecp256k1PublicKey = senderPublicKey;
-        Signature = signature;
+        _senderPublicKey = senderPublicKey;
+        _signature = signature;
         _signedBytes = signedBytes;
     }
 
@@ -67,12 +69,12 @@ public sealed class SignedManifest
     /// </summary>
     public bool VerifySignature()
     {
-        var derivedAddress = Secp256k1KeyPair.AddressFromPublicKey(SenderSecp256k1PublicKey);
+        var derivedAddress = Secp256k1KeyPair.AddressFromPublicKey(_senderPublicKey);
         if (derivedAddress != Manifest.Sender)
             return false;
 
         var hash = Hashes.Keccak256(_signedBytes);
-        return Secp256k1KeyPair.VerifyEcdsa(SenderSecp256k1PublicKey, hash, Signature);
+        return Secp256k1KeyPair.VerifyEcdsa(_senderPublicKey, hash, _signature);
     }
 
     /// <summary>Keccak-256 of the manifest bytes that were signed.</summary>
@@ -96,8 +98,8 @@ public sealed class SignedManifest
             writer.WriteStartObject();
             writer.WritePropertyName("manifest");
             writer.WriteRawValue(_signedBytes, skipInputValidation: false);
-            writer.WriteBase64String("sender_secp256k1", SenderSecp256k1PublicKey);
-            writer.WriteBase64String("signature", Signature);
+            writer.WriteBase64String("sender_secp256k1", _senderPublicKey);
+            writer.WriteBase64String("signature", _signature);
             writer.WriteEndObject();
         }
         return stream.ToArray();

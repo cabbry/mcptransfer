@@ -54,7 +54,7 @@ public class AgentIdentityTests
         var pub = identity.ToPublic();
 
         Assert.Equal(identity.Address, pub.Address);
-        Assert.True(identity.Secp256k1.PublicKeyCompressed.SequenceEqual(pub.Secp256k1PublicKeyCompressed));
+        Assert.True(identity.Secp256k1.PublicKeyCompressed.SequenceEqual(pub.Secp256k1PublicKeyCompressed.Span));
         Assert.True(identity.MlKem.PublicKey.Bytes.SequenceEqual(pub.MlKem.Bytes));
     }
 
@@ -87,6 +87,6 @@ public class AgentIdentityTests
 
         // Mutating the caller-supplied array must not affect the stored copy.
         providedBytes[0] ^= 0xFF;
-        Assert.NotEqual(providedBytes[0], pub.Secp256k1PublicKeyCompressed[0]);
+        Assert.NotEqual(providedBytes[0], pub.Secp256k1PublicKeyCompressed.Span[0]);
     }
 }

@@ -16,14 +16,16 @@ public class EnvelopeEndToEndTests
             AgentIdentity? bobOverride = null,
             int chunkSize = TestChunkSize,
             string? filename = "doc.bin",
-            string? mimeType = "application/octet-stream")
+            string? mimeType = "application/octet-stream",
+            int writerParallelism = EnvelopeWriter.DefaultMaxParallelism,
+            int readerParallelism = EnvelopeReader.DefaultMaxParallelism)
     {
         var alice = aliceOverride ?? AgentIdentity.Generate();
         var bob = bobOverride ?? AgentIdentity.Generate();
         var ipfs = new InMemoryIpfsClient();
 
-        var writer = new EnvelopeWriter(ipfs);
-        var reader = new EnvelopeReader(ipfs);
+        var writer = new EnvelopeWriter(ipfs, writerParallelism);
+        var reader = new EnvelopeReader(ipfs, readerParallelism);
 
         using var input = new MemoryStream(plaintext);
         var write = await writer.SendAsync(
@@ -73,6 +75,40 @@ public class EnvelopeEndToEndTests
         Assert.Equal(3, read.Manifest.Chunks.Count); // 2 full + tail
         Assert.True(read.PlaintextBytesWritten == plaintext.Length);
         Assert.StartsWith("mem:", manifestCid);
+    }
+
+    [Theory]
+    [InlineData(1, 1)]    // strictly sequential
+    [InlineData(2, 2)]
+    [InlineData(8, 8)]    // more workers than chunks (here: 4 chunks)
+    [InlineData(1, 8)]    // asymmetric: serial encode, parallel fetch
+    [InlineData(8, 1)]    // asymmetric: parallel upload, serial decode
+    public async Task RoundTrip_PreservesPlaintextAcrossParallelismSettings(
+        int writerParallelism, int readerParallelism)
+    {
+        // 4 full chunks + a tail, to actually exercise the parallel path.
+        var plaintext = RandomNumberGenerator.GetBytes(TestChunkSize * 4 + 11);
+        var (recovered, _, _) = await RoundTripAsync(
+            plaintext,
+            writerParallelism: writerParallelism,
+            readerParallelism: readerParallelism);
+        Assert.Equal(plaintext, recovered);
+    }
+
+    [Fact]
+    public void EnvelopeWriter_RejectsNonPositiveMaxParallelism()
+    {
+        var ipfs = new InMemoryIpfsClient();
+        Assert.Throws<ArgumentOutOfRangeException>(() => new EnvelopeWriter(ipfs, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new EnvelopeWriter(ipfs, -1));
+    }
+
+    [Fact]
+    public void EnvelopeReader_RejectsNonPositiveMaxParallelism()
+    {
+        var ipfs = new InMemoryIpfsClient();
+        Assert.Throws<ArgumentOutOfRangeException>(() => new EnvelopeReader(ipfs, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new EnvelopeReader(ipfs, -1));
     }
 
     [Fact]

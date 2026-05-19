@@ -13,11 +13,11 @@ public class HybridKemTests
 
         var recoveredKey = HybridKem.Decapsulate(
             recipient,
-            encapsulation.EphemeralSecp256k1PublicKey,
-            encapsulation.KemCiphertext);
+            encapsulation.EphemeralSecp256k1PublicKey.Span,
+            encapsulation.KemCiphertext.Span);
 
         Assert.Equal(HybridKem.DerivedKeyByteLength, encapsulation.DerivedKey.Length);
-        Assert.Equal(encapsulation.DerivedKey, recoveredKey);
+        Assert.Equal(encapsulation.DerivedKey.ToArray(), recoveredKey);
     }
 
     [Fact]
@@ -42,9 +42,9 @@ public class HybridKemTests
         var first = HybridKem.Encapsulate(recipient);
         var second = HybridKem.Encapsulate(recipient);
 
-        Assert.False(first.EphemeralSecp256k1PublicKey.SequenceEqual(second.EphemeralSecp256k1PublicKey));
-        Assert.False(first.KemCiphertext.SequenceEqual(second.KemCiphertext));
-        Assert.False(first.DerivedKey.SequenceEqual(second.DerivedKey));
+        Assert.False(first.EphemeralSecp256k1PublicKey.Span.SequenceEqual(second.EphemeralSecp256k1PublicKey.Span));
+        Assert.False(first.KemCiphertext.Span.SequenceEqual(second.KemCiphertext.Span));
+        Assert.False(first.DerivedKey.Span.SequenceEqual(second.DerivedKey.Span));
     }
 
     [Fact]
@@ -60,10 +60,10 @@ public class HybridKemTests
         // yields an implicit-reject value (still 32 bytes, but unrelated).
         var attackerKey = HybridKem.Decapsulate(
             attacker,
-            encapsulation.EphemeralSecp256k1PublicKey,
-            encapsulation.KemCiphertext);
+            encapsulation.EphemeralSecp256k1PublicKey.Span,
+            encapsulation.KemCiphertext.Span);
 
-        Assert.NotEqual(encapsulation.DerivedKey, attackerKey);
+        Assert.NotEqual(encapsulation.DerivedKey.ToArray(), attackerKey);
     }
 
     [Fact]
@@ -76,18 +76,18 @@ public class HybridKemTests
 
         var keyWithContextA = HybridKem.Decapsulate(
             recipient,
-            encapsulation.EphemeralSecp256k1PublicKey,
-            encapsulation.KemCiphertext,
+            encapsulation.EphemeralSecp256k1PublicKey.Span,
+            encapsulation.KemCiphertext.Span,
             additionalContext: Encoding.UTF8.GetBytes("context-A"));
 
         var keyWithContextB = HybridKem.Decapsulate(
             recipient,
-            encapsulation.EphemeralSecp256k1PublicKey,
-            encapsulation.KemCiphertext,
+            encapsulation.EphemeralSecp256k1PublicKey.Span,
+            encapsulation.KemCiphertext.Span,
             additionalContext: Encoding.UTF8.GetBytes("context-B"));
 
-        Assert.Equal(encapsulation.DerivedKey, keyWithContextA);
-        Assert.NotEqual(encapsulation.DerivedKey, keyWithContextB);
+        Assert.Equal(encapsulation.DerivedKey.ToArray(), keyWithContextA);
+        Assert.NotEqual(encapsulation.DerivedKey.ToArray(), keyWithContextB);
     }
 
     [Fact]

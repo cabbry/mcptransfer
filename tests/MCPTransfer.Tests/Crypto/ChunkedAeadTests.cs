@@ -69,7 +69,7 @@ public class ChunkedAeadTests
 
         Assert.Single(chunks);
         Assert.Equal(0, chunks[0].Index);
-        Assert.Empty(chunks[0].Ciphertext);
+        Assert.Equal(0, chunks[0].Ciphertext.Length);
         Assert.Equal(ChunkedAead.TagByteLength, chunks[0].Tag.Length);
     }
 
@@ -97,8 +97,10 @@ public class ChunkedAeadTests
         var (key, prefix) = NewKeyMaterial();
         var chunks = await EncryptToArrayAsync(plaintext, key, prefix, TestChunkSize);
 
-        // Flip a bit in chunk 1's ciphertext.
-        chunks[1].Ciphertext[0] ^= 0x01;
+        // Flip a bit in chunk 1's ciphertext by rebuilding the chunk.
+        var tamperedCiphertext = chunks[1].Ciphertext.ToArray();
+        tamperedCiphertext[0] ^= 0x01;
+        chunks[1] = new EncryptedChunk(chunks[1].Index, tamperedCiphertext, chunks[1].Tag);
 
         await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
             () => DecryptToBytesAsync(chunks, key, prefix));
@@ -111,7 +113,9 @@ public class ChunkedAeadTests
         var (key, prefix) = NewKeyMaterial();
         var chunks = await EncryptToArrayAsync(plaintext, key, prefix, TestChunkSize);
 
-        chunks[0].Tag[0] ^= 0xFF;
+        var tamperedTag = chunks[0].Tag.ToArray();
+        tamperedTag[0] ^= 0xFF;
+        chunks[0] = new EncryptedChunk(chunks[0].Index, chunks[0].Ciphertext, tamperedTag);
 
         await Assert.ThrowsAsync<AuthenticationTagMismatchException>(
             () => DecryptToBytesAsync(chunks, key, prefix));

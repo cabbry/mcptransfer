@@ -18,23 +18,26 @@ namespace MCPTransfer.Core.Envelope;
 /// byte sequence.
 /// </para>
 /// <para>
-/// Receivers should verify the sender's signature against the <em>exact
-/// bytes</em> downloaded from IPFS, not against a re-serialized form, so
-/// that any encoding drift (whitespace, extra fields) fails the signature
-/// check rather than being silently normalized away.
+/// Byte-valued properties are exposed as <see cref="ReadOnlyMemory{T}"/>
+/// so callers cannot mutate the stored bytes. Use <c>.Span</c> for
+/// synchronous access and <c>.ToArray()</c> when a fresh array is needed.
 /// </para>
 /// </remarks>
 public sealed class Manifest
 {
     public const int CurrentVersion = 1;
 
+    private readonly byte[] _ephemeralSecp256k1PublicKey;
+    private readonly byte[] _kemCiphertext;
+    private readonly byte[] _noncePrefix;
+
     public int Version { get; }
     public string Suite { get; }
     public EthereumAddress Sender { get; }
     public EthereumAddress Recipient { get; }
-    public byte[] EphemeralSecp256k1PublicKey { get; }
-    public byte[] KemCiphertext { get; }
-    public byte[] NoncePrefix { get; }
+    public ReadOnlyMemory<byte> EphemeralSecp256k1PublicKey => _ephemeralSecp256k1PublicKey;
+    public ReadOnlyMemory<byte> KemCiphertext => _kemCiphertext;
+    public ReadOnlyMemory<byte> NoncePrefix => _noncePrefix;
     public int ChunkSize { get; }
     public long TotalSize { get; }
     public long CreatedAtUnixSeconds { get; }
@@ -47,9 +50,9 @@ public sealed class Manifest
         string suite,
         EthereumAddress sender,
         EthereumAddress recipient,
-        byte[] ephemeralSecp256k1PublicKey,
-        byte[] kemCiphertext,
-        byte[] noncePrefix,
+        ReadOnlyMemory<byte> ephemeralSecp256k1PublicKey,
+        ReadOnlyMemory<byte> kemCiphertext,
+        ReadOnlyMemory<byte> noncePrefix,
         int chunkSize,
         long totalSize,
         long createdAtUnixSeconds,
@@ -62,9 +65,6 @@ public sealed class Manifest
         ArgumentException.ThrowIfNullOrEmpty(suite);
         ArgumentNullException.ThrowIfNull(sender);
         ArgumentNullException.ThrowIfNull(recipient);
-        ArgumentNullException.ThrowIfNull(ephemeralSecp256k1PublicKey);
-        ArgumentNullException.ThrowIfNull(kemCiphertext);
-        ArgumentNullException.ThrowIfNull(noncePrefix);
         ArgumentNullException.ThrowIfNull(chunks);
 
         if (ephemeralSecp256k1PublicKey.Length != Secp256k1KeyPair.PublicKeyCompressedByteLength)
@@ -116,9 +116,9 @@ public sealed class Manifest
         Suite = suite;
         Sender = sender;
         Recipient = recipient;
-        EphemeralSecp256k1PublicKey = (byte[])ephemeralSecp256k1PublicKey.Clone();
-        KemCiphertext = (byte[])kemCiphertext.Clone();
-        NoncePrefix = (byte[])noncePrefix.Clone();
+        _ephemeralSecp256k1PublicKey = ephemeralSecp256k1PublicKey.ToArray();
+        _kemCiphertext = kemCiphertext.ToArray();
+        _noncePrefix = noncePrefix.ToArray();
         ChunkSize = chunkSize;
         TotalSize = totalSize;
         CreatedAtUnixSeconds = createdAtUnixSeconds;
@@ -155,23 +155,23 @@ public sealed class Manifest
                 writer.WriteString("cid", chunk.Cid);
                 writer.WriteNumber("index", chunk.Index);
                 writer.WriteNumber("size", chunk.CiphertextSize);
-                writer.WriteBase64String("tag", chunk.Tag);
+                writer.WriteBase64String("tag", chunk.Tag.Span);
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
 
             writer.WriteNumber("created_at", CreatedAtUnixSeconds);
-            writer.WriteBase64String("ephemeral_secp256k1", EphemeralSecp256k1PublicKey);
+            writer.WriteBase64String("ephemeral_secp256k1", _ephemeralSecp256k1PublicKey);
 
             if (Filename is not null)
                 writer.WriteString("filename", Filename);
 
-            writer.WriteBase64String("kem_ciphertext", KemCiphertext);
+            writer.WriteBase64String("kem_ciphertext", _kemCiphertext);
 
             if (MimeType is not null)
                 writer.WriteString("mime_type", MimeType);
 
-            writer.WriteBase64String("nonce_prefix", NoncePrefix);
+            writer.WriteBase64String("nonce_prefix", _noncePrefix);
             writer.WriteString("recipient", Recipient.LowerHex);
             writer.WriteString("sender", Sender.LowerHex);
             writer.WriteString("suite", Suite);

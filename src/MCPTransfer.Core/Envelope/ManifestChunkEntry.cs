@@ -9,17 +9,18 @@ namespace MCPTransfer.Core.Envelope;
 /// </summary>
 public sealed class ManifestChunkEntry
 {
+    private readonly byte[] _tag;
+
     public int Index { get; }
     public string Cid { get; }
-    public byte[] Tag { get; }
+    public ReadOnlyMemory<byte> Tag => _tag;
     public int CiphertextSize { get; }
 
-    public ManifestChunkEntry(int index, string cid, byte[] tag, int ciphertextSize)
+    public ManifestChunkEntry(int index, string cid, ReadOnlyMemory<byte> tag, int ciphertextSize)
     {
         if (index < 0)
             throw new ArgumentOutOfRangeException(nameof(index), "Chunk index must be non-negative.");
         ArgumentException.ThrowIfNullOrEmpty(cid);
-        ArgumentNullException.ThrowIfNull(tag);
         if (tag.Length != ChunkedAead.TagByteLength)
             throw new ArgumentException(
                 $"Tag must be exactly {ChunkedAead.TagByteLength} bytes (got {tag.Length}).",
@@ -30,7 +31,7 @@ public sealed class ManifestChunkEntry
 
         Index = index;
         Cid = cid;
-        Tag = (byte[])tag.Clone();
+        _tag = tag.ToArray();
         CiphertextSize = ciphertextSize;
     }
 }

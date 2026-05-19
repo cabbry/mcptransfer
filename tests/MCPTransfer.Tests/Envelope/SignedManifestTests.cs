@@ -104,8 +104,20 @@ public class SignedManifestTests
         var (sender, manifest) = BuildSampleForSender();
         var signed = SignedManifest.Create(manifest, sender);
 
-        signed.Signature[0] ^= 0x01;
-        Assert.False(signed.VerifySignature());
+        // Round-trip through JSON with the signature field swapped for a
+        // random (but well-formed) one. The immutable surface prevents
+        // direct mutation of signed.Signature.
+        var json = Encoding.UTF8.GetString(signed.ToCanonicalJsonBytes());
+        var randomSig = Convert.ToBase64String(
+            System.Security.Cryptography.RandomNumberGenerator.GetBytes(
+                Secp256k1KeyPair.SignatureByteLength));
+        var corrupted = System.Text.RegularExpressions.Regex.Replace(
+            json,
+            "\"signature\":\"[^\"]*\"",
+            "\"signature\":\"" + randomSig + "\"");
+
+        var tampered = SignedManifest.FromJsonBytes(Encoding.UTF8.GetBytes(corrupted));
+        Assert.False(tampered.VerifySignature());
     }
 
     [Fact]
@@ -114,13 +126,22 @@ public class SignedManifestTests
         var (sender, manifest) = BuildSampleForSender();
         var signed = SignedManifest.Create(manifest, sender);
 
-        // Replace the sender pubkey with someone else's; signature was made by 'sender'
-        // so it would still verify cryptographically against 'sender' but VerifySignature
-        // also checks address consistency.
+        // Substitute the sender_secp256k1 field with another agent's pubkey
+        // via JSON round-trip. The original signature is still cryptographic-
+        // ally valid against the original sender, but VerifySignature also
+        // checks that the embedded pubkey derives to the address declared
+        // inside the manifest — and the substituted pubkey does not.
         var attacker = Secp256k1KeyPair.Generate();
-        attacker.PublicKeyCompressed.CopyTo(signed.SenderSecp256k1PublicKey.AsSpan());
+        var attackerPkB64 = Convert.ToBase64String(attacker.PublicKeyCompressed);
 
-        Assert.False(signed.VerifySignature());
+        var json = Encoding.UTF8.GetString(signed.ToCanonicalJsonBytes());
+        var corrupted = System.Text.RegularExpressions.Regex.Replace(
+            json,
+            "\"sender_secp256k1\":\"[^\"]*\"",
+            "\"sender_secp256k1\":\"" + attackerPkB64 + "\"");
+
+        var tampered = SignedManifest.FromJsonBytes(Encoding.UTF8.GetBytes(corrupted));
+        Assert.False(tampered.VerifySignature());
     }
 
     [Fact]
