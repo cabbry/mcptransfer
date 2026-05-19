@@ -80,63 +80,85 @@ public sealed class EnvelopeWriter
             sender.Address, recipient.Address, noncePrefix);
 
         using var encapsulation = HybridKem.Encapsulate(recipient, hkdfContext);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var ct = linkedCts.Token;
 
         var uploadTasks = new List<Task<ManifestChunkEntry>>();
         var semaphore = new SemaphoreSlim(_maxParallelism, _maxParallelism);
         long totalSize = 0;
 
-        await foreach (var chunk in ChunkedAead.EncryptAsync(
-            input,
-            encapsulation.DerivedKey,
-            noncePrefix,
-            chunkSize,
-            cancellationToken).ConfigureAwait(false))
+        try
         {
-            // Safety net for non-seekable streams (or seekable streams that
-            // lied about Length): catch oversize inputs once we have actually
-            // consumed past the cap.
-            if (totalSize + chunk.Ciphertext.Length > MaxPlaintextBytes)
+            await foreach (var chunk in ChunkedAead.EncryptAsync(
+                input,
+                encapsulation.DerivedKey,
+                noncePrefix,
+                chunkSize,
+                ct).ConfigureAwait(false))
             {
-                throw new InvalidOperationException(
-                    $"Input exceeded the {MaxPlaintextBytes}-byte per-transfer AES-GCM "
-                    + "safety cap mid-stream. Split the file across multiple transfers.");
+                // Safety net for non-seekable streams (or seekable streams that
+                // lied about Length): catch oversize inputs once we have actually
+                // consumed past the cap.
+                if (totalSize + chunk.Ciphertext.Length > MaxPlaintextBytes)
+                {
+                    throw new InvalidOperationException(
+                        $"Input exceeded the {MaxPlaintextBytes}-byte per-transfer AES-GCM "
+                        + "safety cap mid-stream. Split the file across multiple transfers.");
+                }
+
+                // Gate the producer: wait until a free upload slot is available
+                // so we never hold more than _maxParallelism encrypted chunks in
+                // memory at any one time.
+                await semaphore.WaitAsync(ct).ConfigureAwait(false);
+
+                totalSize += chunk.Ciphertext.Length;
+                var capturedChunk = chunk;
+                uploadTasks.Add(UploadChunkAsync(capturedChunk, semaphore, ct));
             }
 
-            // Gate the producer: wait until a free upload slot is available
-            // so we never hold more than _maxParallelism encrypted chunks in
-            // memory at any one time.
-            await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            // Task.WhenAll preserves array order: tasks were added in chunk-index
+            // order, so the resulting entries are also in index order.
+            var chunkEntries = await Task.WhenAll(uploadTasks).ConfigureAwait(false);
 
-            totalSize += chunk.Ciphertext.Length;
-            var capturedChunk = chunk;
-            uploadTasks.Add(UploadChunkAsync(capturedChunk, semaphore, cancellationToken));
+            var manifest = new Manifest(
+                version: Manifest.CurrentVersion,
+                suite: HybridKem.SuiteIdentifier,
+                sender: sender.Address,
+                recipient: recipient.Address,
+                ephemeralSecp256k1PublicKey: encapsulation.EphemeralSecp256k1PublicKey,
+                kemCiphertext: encapsulation.KemCiphertext,
+                noncePrefix: noncePrefix,
+                chunkSize: chunkSize,
+                totalSize: totalSize,
+                createdAtUnixSeconds: DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                chunks: chunkEntries,
+                filename: filename,
+                mimeType: mimeType);
+
+            var signed = SignedManifest.Create(manifest, sender);
+            var manifestCid = await _ipfs.PinAsync(
+                signed.ToCanonicalJsonBytes(),
+                ct).ConfigureAwait(false);
+
+            return new EnvelopeWriteResult(manifestCid, signed);
         }
-
-        // Task.WhenAll preserves array order: tasks were added in chunk-index
-        // order, so the resulting entries are also in index order.
-        var chunkEntries = await Task.WhenAll(uploadTasks).ConfigureAwait(false);
-
-        var manifest = new Manifest(
-            version: Manifest.CurrentVersion,
-            suite: HybridKem.SuiteIdentifier,
-            sender: sender.Address,
-            recipient: recipient.Address,
-            ephemeralSecp256k1PublicKey: encapsulation.EphemeralSecp256k1PublicKey,
-            kemCiphertext: encapsulation.KemCiphertext,
-            noncePrefix: noncePrefix,
-            chunkSize: chunkSize,
-            totalSize: totalSize,
-            createdAtUnixSeconds: DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            chunks: chunkEntries,
-            filename: filename,
-            mimeType: mimeType);
-
-        var signed = SignedManifest.Create(manifest, sender);
-        var manifestCid = await _ipfs.PinAsync(
-            signed.ToCanonicalJsonBytes(),
-            cancellationToken).ConfigureAwait(false);
-
-        return new EnvelopeWriteResult(manifestCid, signed);
+        catch
+        {
+            // Drain: cancel any in-flight uploads and wait for them to settle
+            // so they do not keep running (and burning Pinata quota / leaking
+            // tasks) after the original exception bubbles up.
+            linkedCts.Cancel();
+            try
+            {
+                await Task.WhenAll(uploadTasks).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Swallow follow-on exceptions — the first failure is what the
+                // caller cares about; we just need the tasks to terminate.
+            }
+            throw;
+        }
     }
 
     private async Task<ManifestChunkEntry> UploadChunkAsync(
