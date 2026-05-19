@@ -289,9 +289,17 @@ nonce (12 bytes) = nonce_prefix (8 bytes random, par envoi)
 - Le préfixe aléatoire de 8 bytes est tiré une seule fois par envoi
   → probabilité de collision entre deux envois = 2⁻⁶⁴ (négligeable)
 - Le `chunk_idx` garantit l'unicité **à l'intérieur** d'un envoi
-- Capacité : 2³² chunks × 16 MiB (taille de chunk fixée plus haut) =
-  **64 GiB par envoi** avant que l'index ne sature. Au-delà → on rejette
-  le fichier (cap documenté, pas de rotation de clé en POC)
+- Deux limites de capacité distinctes coexistent :
+  - **Saturation de l'index de chunk** : sur 4 bytes signés (`int`), max
+    2³¹ chunks. À 16 MiB chacun → 2³¹ × 2²⁴ = **2⁵⁵ bytes ≈ 32 PiB**.
+    Jamais la contrainte effective.
+  - **Sécurité AES-GCM** (NIST SP 800-38D) : recommandation de rotation
+    de clé au-delà de **~64 GiB de plaintext par clé**. Comme chaque
+    envoi a sa propre clé dérivée par HKDF, le budget est de 64 GiB par
+    envoi (≈ 4 096 chunks de 16 MiB). C'est **la** contrainte qui s'applique.
+- Au-delà de 64 GiB : `EnvelopeWriter.SendAsync` rejette explicitement
+  (`InvalidOperationException`). Cap documenté, pas de rotation de clé
+  intra-envoi en POC. Pour transférer plus, splitter en plusieurs envois.
 
 ### Pourquoi pas un nonce purement aléatoire 12 bytes
 

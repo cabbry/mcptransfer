@@ -20,8 +20,23 @@ public sealed class EnvelopeWriter
 {
     public const int DefaultMaxParallelism = 4;
 
+    /// <summary>
+    /// NIST SP 800-38D recommends rotating an AES-GCM key after roughly
+    /// 64 GiB of plaintext. Each envelope uses one HKDF-derived AES key,
+    /// so we reject inputs that would exceed this budget on a single key.
+    /// Override via <see cref="MaxPlaintextBytes"/> (e.g. tests).
+    /// </summary>
+    public const long DefaultMaxPlaintextBytes = 64L * 1024 * 1024 * 1024;
+
     private readonly IIpfsClient _ipfs;
     private readonly int _maxParallelism;
+
+    /// <summary>
+    /// Hard upper bound on the plaintext size of a single transfer (default
+    /// <see cref="DefaultMaxPlaintextBytes"/> = 64 GiB). Set via an
+    /// object initializer for tests or specialised deployments.
+    /// </summary>
+    public long MaxPlaintextBytes { get; init; } = DefaultMaxPlaintextBytes;
 
     public EnvelopeWriter(IIpfsClient ipfs, int maxParallelism = DefaultMaxParallelism)
     {
@@ -47,6 +62,19 @@ public sealed class EnvelopeWriter
         ArgumentNullException.ThrowIfNull(sender);
         ArgumentNullException.ThrowIfNull(recipient);
 
+        // Best-effort upfront rejection for seekable streams so the caller
+        // does not pay for any encryption before we know the file is too big.
+        if (input.CanSeek)
+        {
+            var remaining = input.Length - input.Position;
+            if (remaining > MaxPlaintextBytes)
+            {
+                throw new InvalidOperationException(
+                    $"Input size {remaining} bytes exceeds the {MaxPlaintextBytes}-byte "
+                    + "per-transfer AES-GCM safety cap. Split the file across multiple transfers.");
+            }
+        }
+
         var noncePrefix = RandomNumberGenerator.GetBytes(ChunkedAead.NoncePrefixByteLength);
         var hkdfContext = EnvelopeContext.BuildHkdfContext(
             sender.Address, recipient.Address, noncePrefix);
@@ -64,6 +92,16 @@ public sealed class EnvelopeWriter
             chunkSize,
             cancellationToken).ConfigureAwait(false))
         {
+            // Safety net for non-seekable streams (or seekable streams that
+            // lied about Length): catch oversize inputs once we have actually
+            // consumed past the cap.
+            if (totalSize + chunk.Ciphertext.Length > MaxPlaintextBytes)
+            {
+                throw new InvalidOperationException(
+                    $"Input exceeded the {MaxPlaintextBytes}-byte per-transfer AES-GCM "
+                    + "safety cap mid-stream. Split the file across multiple transfers.");
+            }
+
             // Gate the producer: wait until a free upload slot is available
             // so we never hold more than _maxParallelism encrypted chunks in
             // memory at any one time.

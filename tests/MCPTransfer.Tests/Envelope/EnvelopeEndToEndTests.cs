@@ -112,6 +112,80 @@ public class EnvelopeEndToEndTests
     }
 
     [Fact]
+    public async Task EnvelopeWriter_RejectsSeekableInputAboveCap()
+    {
+        var alice = AgentIdentity.Generate();
+        var bob = AgentIdentity.Generate();
+        var ipfs = new InMemoryIpfsClient();
+
+        // Override the per-transfer cap to a tiny value so we can exercise
+        // the upfront seekable-stream check without actually allocating GiBs.
+        var writer = new EnvelopeWriter(ipfs) { MaxPlaintextBytes = 64 };
+
+        // Seekable stream of 200 bytes, cap is 64 bytes.
+        using var input = new MemoryStream(new byte[200]);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => writer.SendAsync(input, alice, bob.ToPublic(), chunkSize: TestChunkSize));
+    }
+
+    [Fact]
+    public async Task EnvelopeWriter_RejectsNonSeekableInputAboveCap()
+    {
+        var alice = AgentIdentity.Generate();
+        var bob = AgentIdentity.Generate();
+        var ipfs = new InMemoryIpfsClient();
+
+        var writer = new EnvelopeWriter(ipfs) { MaxPlaintextBytes = 64 };
+
+        // Wrap a stream so CanSeek == false: the upfront check is skipped
+        // and the mid-stream safety net must catch the overflow.
+        using var inner = new MemoryStream(new byte[200]);
+        using var nonSeekable = new NonSeekableStreamWrapper(inner);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => writer.SendAsync(nonSeekable, alice, bob.ToPublic(), chunkSize: TestChunkSize));
+    }
+
+    [Fact]
+    public async Task ChunkedAead_RejectsOversizeChunkSize()
+    {
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(async () =>
+        {
+            await foreach (var _ in ChunkedAead.EncryptAsync(
+                new MemoryStream(new byte[10]),
+                key: new byte[ChunkedAead.KeyByteLength],
+                noncePrefix: new byte[ChunkedAead.NoncePrefixByteLength],
+                chunkSize: ChunkedAead.MaxChunkSize + 1))
+            {
+                // never reached
+            }
+        });
+    }
+
+    private sealed class NonSeekableStreamWrapper : Stream
+    {
+        private readonly Stream _inner;
+        public NonSeekableStreamWrapper(Stream inner) { _inner = inner; }
+        public override bool CanRead => _inner.CanRead;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+            => _inner.ReadAsync(buffer, ct);
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    [Fact]
     public async Task Reader_RejectsWrongRecipient()
     {
         var alice = AgentIdentity.Generate();

@@ -12,10 +12,28 @@ namespace MCPTransfer.Core.Crypto;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Capacity: 2³¹ chunks × <see cref="DefaultChunkSize"/> ≈ 32 TiB per
-/// transfer before the chunk index overflows. The first uniformly random
-/// 8 bytes of the nonce keep distinct transfers using the same key
-/// statistically independent.
+/// Two distinct upper bounds apply per transfer:
+/// </para>
+/// <list type="bullet">
+/// <item>
+/// <description>
+/// <b>Chunk-index saturation</b>: the index is an <see cref="int"/>, so up
+/// to 2³¹ chunks can be addressed. With <see cref="DefaultChunkSize"/>
+/// (16 MiB) that is ≈ 32 PiB — never the binding constraint in practice.
+/// </description>
+/// </item>
+/// <item>
+/// <description>
+/// <b>AES-GCM safety</b>: NIST SP 800-38D recommends rotating the key
+/// after ≈ 64 GiB of plaintext per (key) — about 4 096 full 16 MiB chunks.
+/// This is the real cap and is enforced one layer up, in
+/// <c>EnvelopeWriter</c>.
+/// </description>
+/// </item>
+/// </list>
+/// <para>
+/// The first uniformly random 8 bytes of the nonce keep distinct transfers
+/// using the same key statistically independent (collision probability 2⁻⁶⁴).
 /// </para>
 /// <para>
 /// An empty input still produces one empty chunk so that recipients always
@@ -26,6 +44,15 @@ namespace MCPTransfer.Core.Crypto;
 public static class ChunkedAead
 {
     public const int DefaultChunkSize = 16 * 1024 * 1024;
+
+    /// <summary>
+    /// Hard upper bound on <c>chunkSize</c>: 64 MiB. AES-GCM tolerates much
+    /// more per call, but at this size the per-chunk memory footprint already
+    /// dominates and slows down the parallel IPFS pipeline. Configurable in
+    /// source if a use case demands more.
+    /// </summary>
+    public const int MaxChunkSize = 64 * 1024 * 1024;
+
     public const int KeyByteLength = 32;
     public const int NoncePrefixByteLength = 8;
     public const int FullNonceByteLength = 12;
@@ -46,8 +73,10 @@ public static class ChunkedAead
     {
         ArgumentNullException.ThrowIfNull(input);
         ValidateKeyAndNonce(key, noncePrefix);
-        if (chunkSize <= 0)
-            throw new ArgumentOutOfRangeException(nameof(chunkSize), "Chunk size must be positive.");
+        if (chunkSize <= 0 || chunkSize > MaxChunkSize)
+            throw new ArgumentOutOfRangeException(
+                nameof(chunkSize),
+                $"Chunk size must be in [1, {MaxChunkSize}] bytes (got {chunkSize}).");
 
         using var aes = new AesGcm(key.Span, TagByteLength);
         var buffer = new byte[chunkSize];
