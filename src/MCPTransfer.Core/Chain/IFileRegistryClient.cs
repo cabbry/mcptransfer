@@ -42,4 +42,10 @@ public interface IFileRegistryClient
         ulong fromBlock,
         ulong toBlock,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Current block height as reported by the RPC endpoint. Used to compute
+    /// "from the last N blocks" sliding windows for <see cref="GetInboxAsync"/>.
+    /// </summary>
+    Task<ulong> GetLatestBlockNumberAsync(CancellationToken cancellationToken = default);
 }

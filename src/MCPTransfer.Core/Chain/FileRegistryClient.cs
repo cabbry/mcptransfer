@@ -121,7 +121,8 @@ public sealed class FileRegistryClient : IFileRegistryClient
         return logs.Select(Map).ToList();
     }
 
-    private async Task<ulong> GetLatestBlockNumberAsync(CancellationToken cancellationToken)
+    /// <inheritdoc />
+    public async Task<ulong> GetLatestBlockNumberAsync(CancellationToken cancellationToken = default)
     {
         var block = await _readOnlyWeb3.Eth.Blocks.GetBlockNumber.SendRequestAsync().ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();

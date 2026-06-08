@@ -18,6 +18,9 @@ static async Task<int> RunAsync(string[] args)
             "claim"         => await ClaimCommand.RunAsync(args),
             "resolve"       => await ResolveCommand.RunAsync(args),
             "whois"         => await WhoisCommand.RunAsync(args),
+            "send"          => await SendCommand.RunAsync(args),
+            "inbox"         => await InboxCommand.RunAsync(args),
+            "receive"       => await ReceiveCommand.RunAsync(args),
             "help" or "--help" or "-h" => PrintUsage(),
             var other       => UnknownCommand(other),
         };
@@ -46,6 +49,12 @@ static int PrintUsage()
     Console.WriteLine(ResolveCommand.Usage);
     Console.WriteLine();
     Console.WriteLine(WhoisCommand.Usage);
+    Console.WriteLine();
+    Console.WriteLine(SendCommand.Usage);
+    Console.WriteLine();
+    Console.WriteLine(InboxCommand.Usage);
+    Console.WriteLine();
+    Console.WriteLine(ReceiveCommand.Usage);
     Console.WriteLine();
     Console.WriteLine("  mcptx help");
     Console.WriteLine("      Show this message.");
