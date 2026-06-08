@@ -1,0 +1,49 @@
+# Bitbucket Pipelines — CI for MCPTransfer
+#
+# Two independent checks run in parallel on every push and pull request:
+#   1. .NET   — restore / build / test the whole solution (MCPTransfer.slnx)
+#   2. Solidity — build + test the contracts with Foundry (contracts/)
+#
+# The gated anvil integration tests (MCPTX_RUN_ANVIL_TESTS, see
+# tests/MCPTransfer.Tests/Integration) stay SKIPPED here: they spin up a local
+# anvil + forge deploy and are meant to run on-demand on a dev machine, not in
+# shared CI. The .NET step therefore exercises only the unit suite.
+image: mcr.microsoft.com/dotnet/sdk:10.0
+
+definitions:
+  caches:
+    nuget: ~/.nuget/packages
+  steps:
+    - step: &dotnet-test
+        name: .NET build + test
+        caches:
+          - nuget
+        script:
+          - dotnet --info
+          - dotnet restore MCPTransfer.slnx
+          - dotnet build MCPTransfer.slnx -c Release --no-restore
+          - dotnet test MCPTransfer.slnx -c Release --no-build --logger "console;verbosity=normal"
+    - step: &forge-test
+        name: Solidity build + test (Foundry)
+        script:
+          # The base image is Debian; install Foundry via the official installer.
+          - apt-get update && apt-get install -y --no-install-recommends curl git ca-certificates
+          - curl -L https://foundry.paradigm.xyz | bash
+          - export PATH="$HOME/.foundry/bin:$PATH"
+          - foundryup
+          - git submodule update --init --recursive
+          - cd contracts
+          - forge --version
+          - FOUNDRY_PROFILE=ci forge build
+          - FOUNDRY_PROFILE=ci forge test -vvv
+
+pipelines:
+  default:
+    - parallel:
+        - step: *dotnet-test
+        - step: *forge-test
+  pull-requests:
+    '**':
+      - parallel:
+          - step: *dotnet-test
+          - step: *forge-test

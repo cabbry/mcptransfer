@@ -1,3 +1,4 @@
+using System.Reflection;
 using MCPTransfer.Agent.Commands;
 
 return await RunAsync(args);
@@ -22,6 +23,7 @@ static async Task<int> RunAsync(string[] args)
             "inbox"         => await InboxCommand.RunAsync(args),
             "receive"       => await ReceiveCommand.RunAsync(args),
             "mcp-serve"     => await McpServeCommand.RunAsync(args),
+            "version" or "--version" or "-v" => PrintVersion(),
             "help" or "--help" or "-h" => PrintUsage(),
             var other       => UnknownCommand(other),
         };
@@ -59,8 +61,28 @@ static int PrintUsage()
     Console.WriteLine();
     Console.WriteLine(McpServeCommand.Usage);
     Console.WriteLine();
+    Console.WriteLine("  mcptx version");
+    Console.WriteLine("      Print version + crypto suite.");
+    Console.WriteLine();
     Console.WriteLine("  mcptx help");
     Console.WriteLine("      Show this message.");
+    return Common.ExitSuccess;
+}
+
+static int PrintVersion()
+{
+    var asm = System.Reflection.Assembly.GetExecutingAssembly();
+    var info = asm.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? asm.GetName().Version?.ToString()
+        ?? "unknown";
+    // Strip the build-metadata suffix (e.g. "+<git sha>") for a clean display.
+    var plus = info.IndexOf('+');
+    if (plus >= 0) info = info[..plus];
+
+    Console.WriteLine($"mcptx {info}");
+    Console.WriteLine($"  crypto suite : {MCPTransfer.Core.Crypto.HybridKem.SuiteIdentifier}");
+    Console.WriteLine("  signatures   : ECDSA secp256k1 + ML-DSA-65 (hybrid)");
+    Console.WriteLine($"  runtime      : .NET {Environment.Version}");
     return Common.ExitSuccess;
 }
 

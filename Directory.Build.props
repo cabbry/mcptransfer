@@ -8,5 +8,8 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- POC version, surfaced by `mcptx version`. Bump per phase. -->
+    <Version>0.5.0</Version>
+    <Product>MCPTransfer</Product>
   </PropertyGroup>
 </Project>

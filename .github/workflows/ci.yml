@@ -1,0 +1,47 @@
+# GitHub Actions CI for MCPTransfer (mirror of bitbucket-pipelines.yml).
+#
+# Kept in sync so the project can move to / dual-host on GitHub without a CI
+# rewrite. Two jobs run in parallel:
+#   dotnet    — restore / build / test MCPTransfer.slnx (unit suite only)
+#   contracts — forge build + test under the `ci` Foundry profile
+#
+# The gated anvil integration tests (MCPTX_RUN_ANVIL_TESTS) are NOT run here;
+# they target a local dev machine with anvil + forge available.
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  dotnet:
+    name: .NET build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore MCPTransfer.slnx
+      - run: dotnet build MCPTransfer.slnx -c Release --no-restore
+      - run: dotnet test MCPTransfer.slnx -c Release --no-build --logger "console;verbosity=normal"
+
+  contracts:
+    name: Solidity build + test (Foundry)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    env:
+      FOUNDRY_PROFILE: ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: forge --version
+      - run: forge build
+      - run: forge test -vvv
