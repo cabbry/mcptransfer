@@ -130,7 +130,9 @@ public static class AgentIdentityFile
         using var doc = JsonDocument.Parse(bytes.ToArray());
         var root = doc.RootElement;
 
-        var version = root.GetProperty("version").GetInt32();
+        if (!root.TryGetProperty("version", out var versionEl) || versionEl.ValueKind != JsonValueKind.Number)
+            throw new InvalidOperationException("Identity file is missing a numeric 'version'.");
+        var version = versionEl.GetInt32();
         if (version != CurrentVersion)
         {
             throw new InvalidOperationException(
@@ -140,16 +142,25 @@ public static class AgentIdentityFile
                     : "This file was written by a newer mcptx build."));
         }
 
-        var ecHex = root.GetProperty("secp256k1_private_key").GetString()
-            ?? throw new InvalidOperationException("Missing 'secp256k1_private_key'.");
-        var mlkemB64 = root.GetProperty("mlkem_private_key").GetString()
-            ?? throw new InvalidOperationException("Missing 'mlkem_private_key'.");
-        var mldsaB64 = root.GetProperty("mldsa_private_key").GetString()
-            ?? throw new InvalidOperationException("Missing 'mldsa_private_key'.");
+        var ecHex = RequireString(root, "secp256k1_private_key");
+        var mlkemB64 = RequireString(root, "mlkem_private_key");
+        var mldsaB64 = RequireString(root, "mldsa_private_key");
 
         var ec = Secp256k1KeyPair.FromPrivateKeyHex(ecHex);
         var mlkem = MlKemKeyPair.FromEncodedPrivateKey(Convert.FromBase64String(mlkemB64));
         var mldsa = MlDsaKeyPair.FromEncodedPrivateKey(Convert.FromBase64String(mldsaB64));
         return AgentIdentity.FromKeys(ec, mlkem, mldsa);
+    }
+
+    /// <summary>
+    /// Read a required string property, throwing a descriptive
+    /// <see cref="InvalidOperationException"/> if it is absent or not a string
+    /// (rather than letting <c>GetProperty</c> raise a bare KeyNotFoundException).
+    /// </summary>
+    private static string RequireString(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var el) || el.ValueKind != JsonValueKind.String)
+            throw new InvalidOperationException($"Identity file is missing string property '{name}'.");
+        return el.GetString()!;
     }
 }

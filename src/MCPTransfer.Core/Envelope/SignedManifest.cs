@@ -98,7 +98,19 @@ public sealed class SignedManifest
     /// </summary>
     public bool VerifySignature()
     {
-        var derivedAddress = Secp256k1KeyPair.AddressFromPublicKey(_senderSecp256k1);
+        // AddressFromPublicKey decodes the secp256k1 point and THROWS on a
+        // 33-byte-but-not-on-curve key. A manifest is untrusted input, so any
+        // structural problem must be a clean "does not verify", never an
+        // escaping exception.
+        EthereumAddress derivedAddress;
+        try
+        {
+            derivedAddress = Secp256k1KeyPair.AddressFromPublicKey(_senderSecp256k1);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
         if (derivedAddress != Manifest.Sender)
             return false;
 
@@ -117,6 +129,13 @@ public sealed class SignedManifest
     /// </summary>
     private static byte[] EcdsaDigest(byte[] manifestBytes, byte[] mldsaPubkey)
     {
+        // The ML-DSA pubkey is appended LAST and MUST be fixed-length, so the
+        // concatenation splits back unambiguously into (manifest, pubkey).
+        // Assert it locally rather than relying on the distant parse-time check.
+        if (mldsaPubkey.Length != MlDsaKeyPair.PublicKeyByteLength)
+            throw new InvalidOperationException(
+                $"ML-DSA public key must be {MlDsaKeyPair.PublicKeyByteLength} bytes for unambiguous binding.");
+
         var combined = new byte[manifestBytes.Length + mldsaPubkey.Length];
         Buffer.BlockCopy(manifestBytes, 0, combined, 0, manifestBytes.Length);
         Buffer.BlockCopy(mldsaPubkey, 0, combined, manifestBytes.Length, mldsaPubkey.Length);

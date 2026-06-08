@@ -195,6 +195,27 @@ public sealed class Manifest
     /// </summary>
     public static Manifest FromJsonBytes(ReadOnlySpan<byte> jsonBytes)
     {
+        // A manifest is untrusted input fetched from IPFS. Any structural
+        // problem (bad JSON, missing/typed-wrong/oversize field, bad base64,
+        // malformed address) must surface as one clean domain exception, not a
+        // raw JsonException / KeyNotFoundException / FormatException / overflow.
+        try
+        {
+            return ParseOrThrow(jsonBytes);
+        }
+        catch (InvalidOperationException)
+        {
+            throw; // our own descriptive errors pass through unchanged
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"Malformed manifest JSON: {ex.GetType().Name} — {ex.Message}", ex);
+        }
+    }
+
+    private static Manifest ParseOrThrow(ReadOnlySpan<byte> jsonBytes)
+    {
         using var doc = JsonDocument.Parse(jsonBytes.ToArray());
         var root = doc.RootElement;
 

@@ -278,6 +278,52 @@ public class SignedManifestTests
     }
 
     [Fact]
+    public void VerifySignature_FailsIfMlDsaSignatureFromDifferentKey_IsolatesMlDsaLeg()
+    {
+        // Keep the correct ML-DSA pubkey (so the ECDSA binding over
+        // manifest‖mldsaPubkey still verifies), but replace the ML-DSA
+        // signature with one produced by a DIFFERENT ML-DSA key over the same
+        // manifest. The ECDSA leg passes; only the ML-DSA leg can reject this.
+        // This guards against a regression that silently drops PQC verification.
+        var (sender, manifest) = BuildSampleForSender();
+        var signed = SignedManifest.Create(manifest, sender);
+        var json = Encoding.UTF8.GetString(signed.ToCanonicalJsonBytes());
+
+        // A valid-format ML-DSA signature from an unrelated key.
+        var foreign = MlDsaKeyPair.Generate();
+        var manifestBytes = signed.Manifest.ToCanonicalJsonBytes();
+        var foreignSig = Convert.ToBase64String(foreign.Sign(manifestBytes));
+
+        var corrupted = System.Text.RegularExpressions.Regex.Replace(
+            json, "\"mldsa_signature\":\"[^\"]*\"", "\"mldsa_signature\":\"" + foreignSig + "\"");
+
+        var tampered = SignedManifest.FromJsonBytes(Encoding.UTF8.GetBytes(corrupted));
+        Assert.False(tampered.VerifySignature());
+    }
+
+    [Fact]
+    public void VerifySignature_ReturnsFalse_NotThrows_OnInvalidSecp256k1Point()
+    {
+        // 33 bytes, valid 0x02 prefix, but an x-coordinate that is not on the
+        // curve. AddressFromPublicKey would throw; VerifySignature must catch
+        // it and return false (never throw on untrusted input).
+        var (sender, manifest) = BuildSampleForSender();
+        var signed = SignedManifest.Create(manifest, sender);
+        var json = Encoding.UTF8.GetString(signed.ToCanonicalJsonBytes());
+
+        var bogus = new byte[Secp256k1KeyPair.PublicKeyCompressedByteLength];
+        bogus[0] = 0x02;
+        for (var i = 1; i < bogus.Length; i++) bogus[i] = 0xFF; // x = 0xFFFF... not on curve
+        var bogusB64 = Convert.ToBase64String(bogus);
+
+        var corrupted = System.Text.RegularExpressions.Regex.Replace(
+            json, "\"sender_secp256k1\":\"[^\"]*\"", "\"sender_secp256k1\":\"" + bogusB64 + "\"");
+
+        var tampered = SignedManifest.FromJsonBytes(Encoding.UTF8.GetBytes(corrupted));
+        Assert.False(tampered.VerifySignature()); // must not throw
+    }
+
+    [Fact]
     public void FromJsonBytes_RejectsWrongMlDsaPubkeyLength()
     {
         var (sender, manifest) = BuildSampleForSender();

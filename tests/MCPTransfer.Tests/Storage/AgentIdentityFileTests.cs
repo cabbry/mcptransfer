@@ -65,6 +65,23 @@ public class AgentIdentityFileTests
     }
 
     [Fact]
+    public void Deserialize_MissingField_GivesFriendlyError_NotKeyNotFound()
+    {
+        // version is current (2) but the mldsa field is absent: must yield a
+        // descriptive InvalidOperationException, not a raw KeyNotFoundException.
+        var json = """
+            {
+                "version": 2,
+                "secp256k1_private_key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+                "mlkem_private_key": "AA=="
+            }
+            """;
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => AgentIdentityFile.Deserialize(System.Text.Encoding.UTF8.GetBytes(json)));
+        Assert.Contains("mldsa_private_key", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SaveAsync_LeavesNoTempFileOnSuccess()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "mcptx-id-" + Guid.NewGuid().ToString("N"));

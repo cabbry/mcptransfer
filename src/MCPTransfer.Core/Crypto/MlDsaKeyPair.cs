@@ -86,20 +86,21 @@ public sealed class MlDsaKeyPair
         if (publicKey.Length != PublicKeyByteLength) return false;
         if (signature.Length != SignatureByteLength) return false;
 
-        MLDsaPublicKeyParameters pub;
+        // Guard the WHOLE path: an adversarial (correct-length) pubkey or
+        // signature can make BouncyCastle throw during FromEncoding, Init, or
+        // VerifySignature. Verify is documented to never throw on bad input.
         try
         {
-            pub = MLDsaPublicKeyParameters.FromEncoding(Params, publicKey.ToArray());
+            var pub = MLDsaPublicKeyParameters.FromEncoding(Params, publicKey.ToArray());
+            var verifier = new MLDsaSigner(Params, deterministic: false);
+            verifier.Init(forSigning: false, pub);
+            var msg = message.ToArray();
+            verifier.BlockUpdate(msg, 0, msg.Length);
+            return verifier.VerifySignature(signature.ToArray());
         }
-        catch
+        catch (Exception)
         {
             return false;
         }
-
-        var verifier = new MLDsaSigner(Params, deterministic: false);
-        verifier.Init(forSigning: false, pub);
-        var msg = message.ToArray();
-        verifier.BlockUpdate(msg, 0, msg.Length);
-        return verifier.VerifySignature(signature.ToArray());
     }
 }
