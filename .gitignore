@@ -54,3 +54,5 @@ contracts/cache/
 contracts/out/
 contracts/broadcast/
 contracts/lib/
+contracts/.gas-snapshot
+contracts/.gas-report

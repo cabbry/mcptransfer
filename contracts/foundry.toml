@@ -1,0 +1,22 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.27"
+optimizer = true
+optimizer_runs = 200
+verbosity = 2
+fs_permissions = [{ access = "read", path = "./" }]
+
+[profile.ci]
+verbosity = 4
+fuzz = { runs = 1000 }
+
+[rpc_endpoints]
+anvil = "http://127.0.0.1:8545"
+amoy  = "${POLYGON_AMOY_RPC_URL}"
+
+[etherscan]
+amoy = { key = "${POLYGONSCAN_API_KEY}", url = "https://api-amoy.polygonscan.com/api", chain = 80002 }

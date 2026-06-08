@@ -17,8 +17,8 @@ POC under construction.
 |-------|--------|
 | 0 — Bootstrap + crypto spike | done |
 | 1 — Envelope + chunking + IPFS (in-memory + Pinata) + CLI | done |
-| 2 — Smart contracts (FileRegistry, KeyRegistry) | pending |
-| 3 — Amoy chain client + CLI send/watch/receive | pending |
+| 2 — Smart contracts (FileRegistry, KeyRegistry, AgentDirectory) + C# chain client | in progress |
+| 3 — CLI send/watch/receive on-chain + Amoy deployment | pending |
 
 ## Repository layout
 
@@ -32,7 +32,7 @@ MCPTransfer/
     MCPTransfer.Agent/              # CLI (mcptx)
   tests/
     MCPTransfer.Tests/              # xunit
-  contracts/                        # Solidity / Foundry (to come in Phase 2)
+  contracts/                        # Solidity / Foundry — Phase 2 (see contracts/README.md)
 ```
 
 ## Requirements
