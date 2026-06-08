@@ -117,14 +117,24 @@ internal static class Common
                     gatewayUrl: config.Ipfs.GatewayUrl);
                 return new RetryingIpfsClient(pinata, RetryPolicy.Default);
 
+            case IpfsConfigSection.KindFile:
+                if (string.IsNullOrEmpty(config.Ipfs.Directory))
+                {
+                    error = "IPFS kind is 'file' but no directory configured. Set MCPTX_IPFS_DIR "
+                          + "env var or pass --ipfs-dir to 'mcptx config init'.";
+                    return null;
+                }
+                return new FileIpfsClient(config.Ipfs.Directory);
+
             case IpfsConfigSection.KindMemory:
                 Console.Error.WriteLine(
                     "Warning: IPFS kind is 'memory' — pins are in-process only and lost when "
-                    + "this command exits. Useful for unit tests, not for CLI usage.");
+                    + "this command exits. Useful for unit tests, not for CLI usage. "
+                    + "For a real local round-trip use --ipfs-dir (file store).");
                 return new InMemoryIpfsClient();
 
             default:
-                error = $"Unknown IPFS kind '{config.Ipfs.Kind}' (expected 'pinata' or 'memory').";
+                error = $"Unknown IPFS kind '{config.Ipfs.Kind}' (expected 'pinata', 'file', or 'memory').";
                 return null;
         }
     }

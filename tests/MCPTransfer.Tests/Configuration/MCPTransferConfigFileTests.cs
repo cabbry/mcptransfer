@@ -141,6 +141,37 @@ public class MCPTransferConfigFileTests
     }
 
     [Fact]
+    public void DefaultProfiles_AnvilLocal_WithIpfsDir_SelectsFileStore()
+    {
+        var p = DefaultProfiles.AnvilLocal(ipfsDir: "/tmp/shared");
+        Assert.Equal("file", p.Ipfs.Kind);
+        Assert.Equal("/tmp/shared", p.Ipfs.Directory);
+    }
+
+    [Fact]
+    public void DefaultProfiles_AnvilLocal_IpfsDir_WinsOverJwt()
+    {
+        var p = DefaultProfiles.AnvilLocal(pinataJwt: "eyJ.x", ipfsDir: "/tmp/shared");
+        Assert.Equal("file", p.Ipfs.Kind);
+    }
+
+    [Fact]
+    public void ApplyEnvOverrides_IpfsDirFromEnv()
+    {
+        var baseline = Sample();
+        Environment.SetEnvironmentVariable("MCPTX_IPFS_DIR", "/env/dir");
+        try
+        {
+            var o = MCPTransferConfigFile.ApplyEnvOverrides(baseline);
+            Assert.Equal("/env/dir", o.Ipfs.Directory);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MCPTX_IPFS_DIR", null);
+        }
+    }
+
+    [Fact]
     public void ApplyEnvOverrides_ThrowsOnUnparseableChainId()
     {
         var baseline = Sample();

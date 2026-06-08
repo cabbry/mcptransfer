@@ -70,8 +70,9 @@ public sealed record IpfsConfigSection
 {
     public const string KindPinata = "pinata";
     public const string KindMemory = "memory";
+    public const string KindFile = "file";
 
-    /// <summary><c>"pinata"</c> or <c>"memory"</c>.</summary>
+    /// <summary><c>"pinata"</c>, <c>"file"</c>, or <c>"memory"</c>.</summary>
     public required string Kind { get; init; }
 
     /// <summary>
@@ -83,4 +84,11 @@ public sealed record IpfsConfigSection
 
     /// <summary>Optional override for the IPFS gateway URL.</summary>
     public string? GatewayUrl { get; init; }
+
+    /// <summary>
+    /// Shared directory backing the local file store. Required when
+    /// <see cref="Kind"/> is <c>"file"</c>. Two agents pointing at the same
+    /// directory can exchange files without a network IPFS provider.
+    /// </summary>
+    public string? Directory { get; init; }
 }

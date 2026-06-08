@@ -14,7 +14,7 @@ public static class DefaultProfiles
     /// nonce-0 / 1 / 2 deployer — matching what
     /// <c>anvil --silent &amp;&amp; forge script ... --broadcast</c> yields.
     /// </summary>
-    public static MCPTransferConfig AnvilLocal(string? pinataJwt = null) => new()
+    public static MCPTransferConfig AnvilLocal(string? pinataJwt = null, string? ipfsDir = null) => new()
     {
         Chain = new ChainConfigSection
         {
@@ -24,13 +24,22 @@ public static class DefaultProfiles
             KeyRegistryAddress = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
             AgentDirectoryAddress = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
         },
-        Ipfs = new IpfsConfigSection
-        {
-            Kind = string.IsNullOrEmpty(pinataJwt) ? IpfsConfigSection.KindMemory : IpfsConfigSection.KindPinata,
-            PinataJwt = pinataJwt,
-            GatewayUrl = null,
-        },
+        Ipfs = ResolveIpfs(pinataJwt, ipfsDir),
     };
+
+    /// <summary>
+    /// Pick the IPFS backend from the supplied options:
+    /// a directory wins (file store, works cross-process), else a JWT
+    /// (Pinata), else memory (in-process, test-only).
+    /// </summary>
+    private static IpfsConfigSection ResolveIpfs(string? pinataJwt, string? ipfsDir)
+    {
+        if (!string.IsNullOrEmpty(ipfsDir))
+            return new IpfsConfigSection { Kind = IpfsConfigSection.KindFile, Directory = ipfsDir };
+        if (!string.IsNullOrEmpty(pinataJwt))
+            return new IpfsConfigSection { Kind = IpfsConfigSection.KindPinata, PinataJwt = pinataJwt };
+        return new IpfsConfigSection { Kind = IpfsConfigSection.KindMemory };
+    }
 
     /// <summary>
     /// Polygon Amoy testnet profile. Contract addresses left as empty placeholders;

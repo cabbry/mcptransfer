@@ -5,10 +5,12 @@ namespace MCPTransfer.Agent.Commands;
 internal static class ConfigCommand
 {
     public const string Usage =
-        "  mcptx config init [--profile anvil-local|amoy] [--pinata-jwt JWT] [--out PATH] [--force]\n"
+        "  mcptx config init [--profile anvil-local|amoy] [--pinata-jwt JWT] [--ipfs-dir DIR] [--out PATH] [--force]\n"
       + "      Bootstrap ~/.mcptx/config.json with a pre-filled profile.\n"
       + "      anvil-local : 127.0.0.1:8545 + deterministic deploy addresses (default).\n"
       + "      amoy        : Polygon Amoy RPC + empty addresses (fill after deploy).\n"
+      + "      IPFS backend: --ipfs-dir DIR (shared-folder file store, works cross-process)\n"
+      + "                    > --pinata-jwt JWT (network) > memory (in-process, test-only).\n"
       + "\n"
       + "  mcptx config show\n"
       + "      Print the effective config (file values overlaid with env vars).";
@@ -33,6 +35,7 @@ internal static class ConfigCommand
     {
         var profileName = (Common.GetFlagValue(args, "--profile") ?? "anvil-local").ToLowerInvariant();
         var jwt = Common.GetFlagValue(args, "--pinata-jwt");
+        var ipfsDir = Common.GetFlagValue(args, "--ipfs-dir");
         var outPath = Common.GetFlagValue(args, "--out") ?? MCPTransferConfigFile.DefaultPath;
         var force = Common.HasFlag(args, "--force");
 
@@ -45,7 +48,7 @@ internal static class ConfigCommand
 
         MCPTransferConfig profile = profileName switch
         {
-            "anvil-local" or "anvil" or "local" => DefaultProfiles.AnvilLocal(jwt),
+            "anvil-local" or "anvil" or "local" => DefaultProfiles.AnvilLocal(jwt, ipfsDir),
             "amoy" or "polygon-amoy"            => DefaultProfiles.Amoy(jwt),
             _ => throw new ArgumentException(
                 $"unknown profile '{profileName}'. Use 'anvil-local' or 'amoy'."),
@@ -67,6 +70,10 @@ internal static class ConfigCommand
                 ? "  PINATA_JWT      : (not set; provide via env var at runtime)"
                 : "  PINATA_JWT      : (stored in file — protect 0600)");
         }
+        else if (profile.Ipfs.Kind == IpfsConfigSection.KindFile)
+        {
+            Console.WriteLine($"  IPFS directory  : {profile.Ipfs.Directory}");
+        }
         return Common.ExitSuccess;
     }
 
@@ -81,6 +88,7 @@ internal static class ConfigCommand
         Console.WriteLine($"KeyRegistry     : {DisplayAddress(config.Chain.KeyRegistryAddress)}");
         Console.WriteLine($"AgentDirectory  : {DisplayAddress(config.Chain.AgentDirectoryAddress)}");
         Console.WriteLine($"IPFS kind       : {config.Ipfs.Kind}");
+        Console.WriteLine($"IPFS directory  : {config.Ipfs.Directory ?? "(n/a)"}");
         Console.WriteLine($"IPFS gateway    : {config.Ipfs.GatewayUrl ?? "(default)"}");
         Console.WriteLine($"PINATA_JWT set  : {(string.IsNullOrEmpty(config.Ipfs.PinataJwt) ? "no" : "yes")}");
         return Common.ExitSuccess;

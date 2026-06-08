@@ -149,6 +149,9 @@ public static class MCPTransferConfigFile
             GatewayUrl = EnvOrDefault("MCPTX_GATEWAY_URL", config.Ipfs.GatewayUrl ?? string.Empty) is { Length: > 0 } g
                 ? g
                 : config.Ipfs.GatewayUrl,
+            Directory = EnvOrDefault("MCPTX_IPFS_DIR", config.Ipfs.Directory ?? string.Empty) is { Length: > 0 } d
+                ? d
+                : config.Ipfs.Directory,
         };
 
         return config with { Chain = chain, Ipfs = ipfs };
