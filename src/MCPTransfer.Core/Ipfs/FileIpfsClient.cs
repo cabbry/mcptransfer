@@ -49,17 +49,28 @@ public sealed class FileIpfsClient : IIpfsClient
         try
         {
             await File.WriteAllBytesAsync(tempPath, data.ToArray(), cancellationToken).ConfigureAwait(false);
-            File.Move(tempPath, finalPath, overwrite: true);
+            // Content-addressed: an existing blob already holds identical bytes,
+            // so NEVER overwrite. A plain (non-overwriting) move means a
+            // concurrent pin of the same content simply loses the race and
+            // throws IOException, which we treat as success. This avoids the
+            // delete-then-move churn of overwrite:true that races on Windows.
+            File.Move(tempPath, finalPath);
         }
         catch (IOException) when (File.Exists(finalPath))
         {
-            // A concurrent pin of identical content beat us to the rename.
-            TryDelete(tempPath);
+            // A concurrent (or prior) pin of identical content already created
+            // the final blob — that's the idempotent success case.
         }
         catch
         {
             TryDelete(tempPath);
             throw;
+        }
+        finally
+        {
+            // If our temp survived (e.g. the move lost the race), clean it up.
+            if (File.Exists(tempPath))
+                TryDelete(tempPath);
         }
         return cid;
     }

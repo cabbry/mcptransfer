@@ -53,17 +53,21 @@ internal static class InboxCommand
             return Common.ExitSuccess;
         }
 
-        // Table: idx | block | from | timestamp | cid
-        Console.WriteLine($"  {"#",-4} {"block",-10} {"timestamp",-20} {"from",-44} cid");
-        Console.WriteLine($"  {new string('-', 4)} {new string('-', 10)} {new string('-', 20)} {new string('-', 44)} {new string('-', 12)}");
+        // Per entry: index, block, timestamp, from, cid, and the on-chain
+        // content hash (pass it to 'receive --expect-hash' to corroborate).
         for (var i = 0; i < events.Count; i++)
         {
             var e = events[i];
             var ts = e.Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
-            Console.WriteLine($"  {i,-4} {e.BlockNumber,-10} {ts,-20} {e.From,-44} {e.Cid}");
+            Console.WriteLine($"  [{i}] block {e.BlockNumber}  {ts}");
+            Console.WriteLine($"      from        : {e.From}");
+            Console.WriteLine($"      cid         : {e.Cid}");
+            Console.WriteLine($"      content hash: 0x{Convert.ToHexString(e.ContentHash).ToLowerInvariant()}");
         }
         Console.WriteLine();
-        Console.WriteLine($"  {events.Count} event(s). Use 'mcptx receive <cid> --out PATH' to decrypt one.");
+        Console.WriteLine($"  {events.Count} event(s).");
+        Console.WriteLine("  Decrypt one with:");
+        Console.WriteLine("    mcptx receive <cid> --out PATH --expect-hash <content hash>");
         return Common.ExitSuccess;
     }
 

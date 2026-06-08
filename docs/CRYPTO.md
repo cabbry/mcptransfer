@@ -412,35 +412,42 @@ est alors chiffré **pour l'attaquant**. Perte de confidentialité totale.
 > ou recouper la résolution via plusieurs RPC. **v2** : multi-RPC quorum,
 > ou ancrage de l'annuaire via une preuve de Merkle vérifiable.
 
-#### 2. La pubkey ML-KEM n'est liée au destinataire par rien de vérifiable
+#### 2. La pubkey ML-KEM liée au destinataire — ✅ RÉSOLU (v2)
 
-Seule la clé **secp256k1** est vérifiée (elle dérive vers l'adresse). La clé
-**ML-KEM**, elle, ne peut pas être dérivée d'une adresse — et le contexte HKDF
-ne lie que `sender ‖ recipient ‖ nonce_prefix`, **pas** la pubkey ML-KEM. Un
-RPC menteur peut donc substituer une clé ML-KEM dont il détient le secret.
+> **Statut : corrigé en code.** La pubkey ML-KEM du destinataire est
+> désormais **liée dans le contexte HKDF** (`EnvelopeContext.BuildHkdfContext`
+> bind `sender ‖ recipient ‖ recipient_mlkem_pubkey ‖ nonce_prefix`). Une clé
+> ML-KEM substituée change donc **déterministiquement** la clé AES dérivée :
+> ce qui n'était sûr que *par accident* de la construction hybride est
+> maintenant une **garantie par design** (la dérivation échoue closed même si
+> un futur refactor retirait la patte ECDH du KDF). ⚠️ Changement de
+> dérivation → incompatible avec les enveloppes créées avant (OK en pré-release).
 
-**Pourquoi c'est *aujourd'hui* sans danger** (par accident, pas par design) :
-la construction hybride exige aussi le shared secret ECDH, qui nécessite la
-clé privée secp256k1 *réelle* du destinataire — que l'attaquant n'a pas. Donc
-la clé AES dérivée diverge → le vrai destinataire ne peut pas déchiffrer
-(DoS), mais l'attaquant ne peut pas lire non plus.
+Contexte historique (avant le fix) : seule la clé secp256k1 était vérifiée
+(elle dérive vers l'adresse) ; la clé ML-KEM, non dérivable d'une adresse,
+n'était liée à rien — un RPC menteur pouvait la substituer. La sécurité tenait
+au fait que la patte ECDH (nécessitant la clé privée secp256k1 réelle du
+destinataire) faisait diverger la clé finale. Ce filet est désormais explicite.
 
-> ⚠️ **Ce filet de sécurité est accidentel.** Si quelqu'un retire un jour la
-> patte secp256k1 du KDF, ou laisse ML-KEM seul, la substitution devient une
-> **perte de confidentialité**. **v2** : lier la pubkey ML-KEM dans le
-> contexte HKDF et/ou exiger une preuve de possession à la publication.
+Reste pour une v(n+1) : exiger une preuve de possession de la clé ML-KEM à la
+publication (`KeyRegistry`), pour fermer aussi le canal "DoS par clé bidon".
 
-#### 3. Le `content_hash` on-chain n'est jamais vérifié à la réception
+#### 3. Le `content_hash` on-chain vérifié à la réception — ✅ RÉSOLU (v2)
 
-`send` émet `FileSent(…, contentHash=Keccak256(manifest))` on-chain.
-`receive <cid>` récupère le manifest par CID et **ne compare jamais** son
-hash au `contentHash` on-chain. L'ancre d'intégrité on-chain est donc
-**décorative** côté réception. Avec un vrai CID IPFS (content-addressed), le
-CID lie déjà le contenu ; mais avec un backend non content-addressed
-(InMemory, gateway permissif), rien ne lie le manifest servi au hash annoncé.
+> **Statut : corrigé en code.** `EnvelopeReader.Receive*Async` accepte un
+> `expectedContentHash` optionnel : s'il est fourni, le `Keccak256` du manifest
+> récupéré doit y correspondre (comparaison `FixedTimeEquals`) **avant** tout
+> déchiffrement, sinon la réception est refusée. `mcptx inbox` affiche
+> désormais le `content_hash` de chaque event `FileSent` ; `mcptx receive
+> --expect-hash 0x…` (et le tool MCP `receive_file`, paramètre `expect_hash`)
+> le vérifient. L'ancre on-chain n'est plus décorative : elle relie les octets
+> livrés à l'enregistrement on-chain, ce qui défait un manifest substitué
+> (mais validement signé par un tiers) servi au même CID par un backend non
+> content-addressed.
 
-> **v2** : `receive` devrait prendre le `contentHash` attendu (depuis l'event
-> `FileSent`) et rejeter tout manifest dont `Keccak256` diffère.
+Note : sans `--expect-hash`, `receive` procède sur la seule signature du
+manifest (et l'avertit explicitement). Le check est opt-in mais le flux
+naturel `inbox → receive` fournit le hash.
 
 #### 4. `receive` présente l'expéditeur comme authentique sans recoupement
 

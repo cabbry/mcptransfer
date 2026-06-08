@@ -77,7 +77,7 @@ public sealed class EnvelopeWriter
 
         var noncePrefix = RandomNumberGenerator.GetBytes(ChunkedAead.NoncePrefixByteLength);
         var hkdfContext = EnvelopeContext.BuildHkdfContext(
-            sender.Address, recipient.Address, noncePrefix);
+            sender.Address, recipient.Address, recipient.MlKem.Bytes, noncePrefix);
 
         using var encapsulation = HybridKem.Encapsulate(recipient, hkdfContext);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

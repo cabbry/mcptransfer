@@ -124,20 +124,30 @@ public static class TransferTools
                 timestamp = e.Timestamp.ToString("u"),
                 from = e.From.ToString(),
                 cid = e.Cid,
+                content_hash = "0x" + Convert.ToHexString(e.ContentHash).ToLowerInvariant(),
             }),
         }, Json);
     }
 
     [McpServerTool(Name = "receive_file")]
-    [Description("Fetch a manifest CID from IPFS, verify its signature, decrypt it, and write the plaintext to a local path (atomic). Returns sender + metadata.")]
+    [Description("Fetch a manifest CID from IPFS, verify its signature, decrypt it, and write the plaintext to a local path (atomic). Returns sender + metadata. Pass expect_hash (the content_hash from the matching inbox entry) to corroborate the bytes against the on-chain record.")]
     public static async Task<string> ReceiveFile(
         McpAgentContext ctx,
         [Description("The manifest CID to fetch (from an inbox entry).")] string cid,
         [Description("Absolute output path to write the decrypted file to.")] string outPath,
+        [Description("Optional 0x content hash from the inbox entry; when given, the manifest must match it or the receive is refused.")] string? expectHash,
         CancellationToken cancellationToken)
     {
+        byte[]? expectedHash = null;
+        if (!string.IsNullOrEmpty(expectHash))
+        {
+            var span = expectHash.AsSpan();
+            if (span.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) span = span[2..];
+            expectedHash = Convert.FromHexString(span);
+        }
+
         var reader = new EnvelopeReader(ctx.Ipfs);
-        var result = await reader.ReceiveToFileAsync(cid, ctx.Identity, outPath, cancellationToken).ConfigureAwait(false);
+        var result = await reader.ReceiveToFileAsync(cid, ctx.Identity, outPath, expectedHash, cancellationToken).ConfigureAwait(false);
         return JsonSerializer.Serialize(new
         {
             output_path = outPath,
