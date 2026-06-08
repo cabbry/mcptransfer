@@ -53,6 +53,6 @@ Thumbs.db
 contracts/cache/
 contracts/out/
 contracts/broadcast/
-contracts/lib/
 contracts/.gas-snapshot
 contracts/.gas-report
+# contracts/lib/ is intentionally NOT ignored — forge-std is tracked as a git submodule.

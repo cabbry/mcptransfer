@@ -14,8 +14,16 @@ deployed.
 
 ## Setup (one-time, after installing Foundry)
 
+forge-std is committed as a git submodule. After cloning:
+
 ```sh
-forge install foundry-rs/forge-std --no-commit
+git submodule update --init --recursive
+```
+
+If you prefer fetching forge-std fresh:
+
+```sh
+forge install foundry-rs/forge-std
 ```
 
 ## Commands
