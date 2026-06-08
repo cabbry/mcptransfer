@@ -13,6 +13,11 @@ static async Task<int> RunAsync(string[] args)
         {
             "keygen"        => await KeygenCommand.RunAsync(args),
             "whoami"        => await WhoamiCommand.RunAsync(args),
+            "config"        => await ConfigCommand.RunAsync(args),
+            "register-key"  => await RegisterKeyCommand.RunAsync(args),
+            "claim"         => await ClaimCommand.RunAsync(args),
+            "resolve"       => await ResolveCommand.RunAsync(args),
+            "whois"         => await WhoisCommand.RunAsync(args),
             "help" or "--help" or "-h" => PrintUsage(),
             var other       => UnknownCommand(other),
         };
@@ -31,6 +36,16 @@ static int PrintUsage()
     Console.WriteLine(KeygenCommand.Usage);
     Console.WriteLine();
     Console.WriteLine(WhoamiCommand.Usage);
+    Console.WriteLine();
+    Console.WriteLine(ConfigCommand.Usage);
+    Console.WriteLine();
+    Console.WriteLine(RegisterKeyCommand.Usage);
+    Console.WriteLine();
+    Console.WriteLine(ClaimCommand.Usage);
+    Console.WriteLine();
+    Console.WriteLine(ResolveCommand.Usage);
+    Console.WriteLine();
+    Console.WriteLine(WhoisCommand.Usage);
     Console.WriteLine();
     Console.WriteLine("  mcptx help");
     Console.WriteLine("      Show this message.");
