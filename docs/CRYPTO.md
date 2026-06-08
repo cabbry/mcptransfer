@@ -390,6 +390,70 @@ pas observable de l'extérieur.)
 | Compromission de la machine de l'agent | Clés privées en clair sur disque (POC). Solution = HSM / TPM / Secure Enclave |
 | Disponibilité des chunks sur IPFS | Si plus personne ne pin, le contenu disparaît. Pas une question de crypto |
 | Cohérence du KeyRegistry on-chain | On fait confiance au contrat. Auto-publication via `msg.sender` empêche l'usurpation mais pas l'erreur de saisie |
+| **RPC menteur** (résolution de handle, lookup de clés, inbox) | On fait confiance à l'endpoint RPC. Détail complet ci-dessous — c'est la limite la plus importante du modèle on-chain |
+
+### Frontières de confiance on-chain (Phase 2/3)
+
+Le client CLI lit la chain via **un seul endpoint RPC**. Tout ce que le RPC
+retourne est cru sur parole. Quatre conséquences à acter explicitement —
+détectées au code review, non couvertes par les défenses cryptographiques :
+
+#### 1. Un RPC menteur peut rediriger un envoi vers un attaquant
+
+`mcptx send fichier --to alice-ai` résout le handle `alice-ai` en adresse
+via **un seul `eth_call`** à `AgentDirectory`. Si le RPC (compromis, ou MITM
+réseau) retourne `attackerAddr` pour ce handle **et** sert les clés de
+l'attaquant, le contrôle client-side `recipientPublic.Address == recipient`
+**passe** (la pubkey de l'attaquant dérive bien vers son adresse). Le fichier
+est alors chiffré **pour l'attaquant**. Perte de confidentialité totale.
+
+> **Mitigation opérateur** : utiliser un RPC de confiance ; ou épingler
+> l'adresse du destinataire hors-bande (`--to 0xADDR` au lieu du handle) ;
+> ou recouper la résolution via plusieurs RPC. **v2** : multi-RPC quorum,
+> ou ancrage de l'annuaire via une preuve de Merkle vérifiable.
+
+#### 2. La pubkey ML-KEM n'est liée au destinataire par rien de vérifiable
+
+Seule la clé **secp256k1** est vérifiée (elle dérive vers l'adresse). La clé
+**ML-KEM**, elle, ne peut pas être dérivée d'une adresse — et le contexte HKDF
+ne lie que `sender ‖ recipient ‖ nonce_prefix`, **pas** la pubkey ML-KEM. Un
+RPC menteur peut donc substituer une clé ML-KEM dont il détient le secret.
+
+**Pourquoi c'est *aujourd'hui* sans danger** (par accident, pas par design) :
+la construction hybride exige aussi le shared secret ECDH, qui nécessite la
+clé privée secp256k1 *réelle* du destinataire — que l'attaquant n'a pas. Donc
+la clé AES dérivée diverge → le vrai destinataire ne peut pas déchiffrer
+(DoS), mais l'attaquant ne peut pas lire non plus.
+
+> ⚠️ **Ce filet de sécurité est accidentel.** Si quelqu'un retire un jour la
+> patte secp256k1 du KDF, ou laisse ML-KEM seul, la substitution devient une
+> **perte de confidentialité**. **v2** : lier la pubkey ML-KEM dans le
+> contexte HKDF et/ou exiger une preuve de possession à la publication.
+
+#### 3. Le `content_hash` on-chain n'est jamais vérifié à la réception
+
+`send` émet `FileSent(…, contentHash=Keccak256(manifest))` on-chain.
+`receive <cid>` récupère le manifest par CID et **ne compare jamais** son
+hash au `contentHash` on-chain. L'ancre d'intégrité on-chain est donc
+**décorative** côté réception. Avec un vrai CID IPFS (content-addressed), le
+CID lie déjà le contenu ; mais avec un backend non content-addressed
+(InMemory, gateway permissif), rien ne lie le manifest servi au hash annoncé.
+
+> **v2** : `receive` devrait prendre le `contentHash` attendu (depuis l'event
+> `FileSent`) et rejeter tout manifest dont `Keccak256` diffère.
+
+#### 4. `receive` présente l'expéditeur comme authentique sans recoupement
+
+`mcptx receive <cid>` affiche `from: 0x…` avec un ✓ vert. La signature du
+manifest prouve que *cette adresse a bien signé ce manifest* — mais **rien**
+ne relie ce CID à un event `FileSent` on-chain, ni ne vérifie que
+l'expéditeur est celui attendu par l'utilisateur. Un attaquant peut forger un
+manifest valide signé par sa propre identité et fournir le CID hors-bande ;
+l'utilisateur voit une adresse d'apparence autoritaire.
+
+> **v2** : `receive` devrait recouper le CID avec l'event `FileSent` (qui
+> nomme l'expéditeur via `msg.sender`, non spoofable), reverse-resolver
+> l'adresse en handle, et avertir si l'expéditeur n'est pas vérifié.
 
 ### Note sur les signatures post-quantum
 
