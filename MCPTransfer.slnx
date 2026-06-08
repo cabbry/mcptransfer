@@ -11,6 +11,7 @@
     <File Path="contracts/README.md" />
     <File Path="contracts/foundry.toml" />
     <File Path="contracts/remappings.txt" />
+    <File Path="contracts/script/Deploy.s.sol" />
     <File Path="contracts/src/AgentDirectory.sol" />
     <File Path="contracts/src/FileRegistry.sol" />
     <File Path="contracts/src/KeyRegistry.sol" />
