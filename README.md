@@ -17,8 +17,8 @@ POC under construction.
 |-------|--------|
 | 0 — Bootstrap + crypto spike | done |
 | 1 — Envelope + chunking + IPFS (in-memory + Pinata) + CLI | done |
-| 2 — Smart contracts (FileRegistry, KeyRegistry, AgentDirectory) + C# chain client | done (anvil-pending) |
-| 3 — CLI send/watch/receive on-chain + Amoy deployment | pending |
+| 2 — Smart contracts (FileRegistry, KeyRegistry, AgentDirectory) + C# chain client | done |
+| 3 — CLI send/inbox/receive on-chain + config layer | done (anvil-tested, Amoy-pending) |
 
 ## Repository layout
 
@@ -50,13 +50,32 @@ dotnet test    MCPTransfer.slnx
 
 ## CLI quickstart (`mcptx`)
 
-```powershell
-# Generate a fresh hybrid identity at ~/.mcptx/identity.json
-dotnet run --project src/MCPTransfer.Agent -- keygen
+Full command reference: [docs/CLI.md](docs/CLI.md).
 
-# Show the local agent's address and public keys
-dotnet run --project src/MCPTransfer.Agent -- whoami
+End-to-end flow (Alice → Bob, anvil local profile):
+
+```powershell
+# In both shells (sender + recipient):
+dotnet run --project src/MCPTransfer.Agent -- keygen
+dotnet run --project src/MCPTransfer.Agent -- config init --profile anvil-local --pinata-jwt $env:PINATA_JWT
+
+# Publish ML-KEM + secp256k1 pubkeys on-chain (required before either can receive)
+dotnet run --project src/MCPTransfer.Agent -- register-key
+
+# Bob claims a handle so Alice can address him by name
+dotnet run --project src/MCPTransfer.Agent -- claim bob
+
+# Alice sends a file
+dotnet run --project src/MCPTransfer.Agent -- send report.pdf --to bob --mime application/pdf
+
+# Bob lists his inbox and decrypts
+dotnet run --project src/MCPTransfer.Agent -- inbox
+dotnet run --project src/MCPTransfer.Agent -- receive bafy... --out received.pdf
 ```
+
+`PINATA_JWT` is required for real IPFS network usage. For local testing
+without a JWT, set `MCPTX_IPFS_KIND=memory` and run sender + receiver in
+the same process (see Phase 1.10 e2e tests for the pattern).
 
 Identity file format (plaintext JSON, see [src/MCPTransfer.Core/Storage/AgentIdentityFile.cs](src/MCPTransfer.Core/Storage/AgentIdentityFile.cs)):
 
@@ -105,7 +124,7 @@ Without the env var, the integration test is skipped silently.
 Three immutable contracts on Polygon Amoy (or Anvil locally):
 
 - **FileRegistry** — emits `FileSent(from, to, cid, contentHash, ts)`
-- **KeyRegistry** — `mapping(address => bytes)` for ML-KEM-768 public keys
+- **KeyRegistry** — `mapping(address => bytes)` for **both** secp256k1 compressed and ML-KEM-768 public keys
 - **AgentDirectory** — first-come-first-served `handle ↔ address` registry (`alice-ai` style)
 
 C# wrappers in `MCPTransfer.Core.Chain` (Nethereum-backed):
