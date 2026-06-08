@@ -79,6 +79,25 @@ catches the exception and sets `isError`).
 **paths on the server's filesystem** — the natural model for a local MCP
 server that shares a filesystem with its host.
 
+### ⚠️ Filesystem access & the `MCPTX_MCP_ROOT` sandbox
+
+By default `send_file` can **read any file** the server process can access,
+and `receive_file` can **write (overwrite) any path** it can write. A
+compromised or prompt-injected host could therefore exfiltrate secrets
+(`send_file` an arbitrary file to an attacker handle) or clobber files
+(`receive_file` over `~/.mcptx/identity.json` or an autostart script).
+
+**Set `MCPTX_MCP_ROOT` to a directory to confine both tools to it.** When
+set, every `path`/`out_path` must resolve inside that root (traversal,
+absolute escapes, and sibling-prefix tricks are rejected); otherwise the
+tool refuses with an "outside the configured MCP workspace root" error. When
+unset, the server prints a startup warning to stderr. **Always set a root
+when exposing the server to an untrusted host.**
+
+```json
+"env": { "MCPTX_MCP_ROOT": "/home/agent/mcptx-workspace" }
+```
+
 ## Trust model
 
 ⚠️ **The server holds the agent's private key and signs transactions on the
@@ -101,10 +120,25 @@ here (a lying RPC can redirect a `send_file`; the recipient's secp256k1 key
 is verified to derive to its address, the ML-KEM key is not independently
 bound — see #1 and #3 there).
 
-## Lifecycle note
+## Lifecycle & concurrency notes
 
 The server registers identity, config, the chain client, and the IPFS client
 as DI singletons. The chain client's read-only Web3 instances and the Pinata
 HttpClient are therefore created once for the server's lifetime and disposed
 on shutdown — unlike the one-shot CLI, a long-lived server must not churn
 them per call.
+
+**Concurrent state-changing tools.** All of `register_key` / `claim` /
+`send_file` sign transactions from the same EOA and rely on auto-nonce. If a
+host called two of them concurrently, both would fetch the same pending nonce
+and one tx would be rejected. The server serializes the transaction-submission
+step behind a single signing lock, so concurrent calls queue rather than
+collide. (Read-only tools — `whoami`/`resolve`/`whois`/`inbox` — run freely
+in parallel.)
+
+**Known limitations (accepted for the POC).** Cancellation tokens are passed
+to the tools but the underlying Nethereum RPC calls are not yet abortable
+mid-flight (a hung RPC runs to its HTTP timeout). Private-key material lives
+unzeroed in managed memory. The `inbox` tool caps the `eth_getLogs` span at
+50 000 blocks (most public RPCs reject wider ranges); page through history
+with `since_block` for older events.

@@ -23,9 +23,17 @@ public static class TransferTools
     {
         var ec = ctx.Identity.Secp256k1.PublicKeyCompressed.ToArray();
         var ml = ctx.Identity.MlKem.PublicKey.Bytes.ToArray();
-        var txHash = await ctx.Chain.KeyRegistry
-            .PublishAsync(ec, ml, ctx.Identity.Secp256k1, cancellationToken)
-            .ConfigureAwait(false);
+
+        string txHash;
+        await ctx.SigningLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            txHash = await ctx.Chain.KeyRegistry
+                .PublishAsync(ec, ml, ctx.Identity.Secp256k1, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally { ctx.SigningLock.Release(); }
+
         return JsonSerializer.Serialize(new
         {
             address = ctx.Identity.Address.ToString(),
@@ -43,28 +51,36 @@ public static class TransferTools
         CancellationToken cancellationToken)
     {
         HandleValidation.Validate(handle);
-        var txHash = await ctx.Chain.AgentDirectory
-            .ClaimAsync(handle, ctx.Identity.Secp256k1, cancellationToken)
-            .ConfigureAwait(false);
+        string txHash;
+        await ctx.SigningLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            txHash = await ctx.Chain.AgentDirectory
+                .ClaimAsync(handle, ctx.Identity.Secp256k1, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally { ctx.SigningLock.Release(); }
         return JsonSerializer.Serialize(new { handle, owner = ctx.Identity.Address.ToString(), tx_hash = txHash }, Json);
     }
 
     [McpServerTool(Name = "send_file")]
-    [Description("Encrypt a local file end-to-end for a recipient, upload it to IPFS, and announce it on chain. 'to' is a handle or 0x address. Signs a transaction and spends gas. Returns the manifest CID.")]
+    [Description("Encrypt a local file end-to-end for a recipient, upload it to IPFS, and announce it on chain. 'to' is a handle or 0x address. Signs a transaction and spends gas. Returns the manifest CID. If MCPTX_MCP_ROOT is set, 'path' must be inside it.")]
     public static async Task<string> SendFile(
         McpAgentContext ctx,
-        [Description("Absolute path to the local file to send (readable by the server process).")] string path,
+        [Description("Path to the local file to send (readable by the server). Confined to MCPTX_MCP_ROOT when set.")] string path,
         [Description("Recipient: a handle (e.g. 'bob') or a 0x Ethereum address.")] string to,
         [Description("Optional MIME type; defaults to application/octet-stream.")] string? mime,
         CancellationToken cancellationToken)
     {
-        if (!File.Exists(path))
-            throw new InvalidOperationException($"File not found: {path}");
+        // Confine the read to the workspace root (no-op when unconfined).
+        var resolvedPath = ctx.Workspace.Resolve(path, nameof(path));
+        if (!File.Exists(resolvedPath))
+            throw new InvalidOperationException($"File not found: {resolvedPath}");
 
         var recipient = await RecipientResolver.ResolveAsync(ctx.Chain, to, cancellationToken).ConfigureAwait(false);
 
         EnvelopeWriteResult write;
-        await using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+        await using (var fs = new FileStream(resolvedPath, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
             // Use the shared singleton IPFS client — do NOT dispose it here;
             // the host owns its lifetime.
@@ -73,15 +89,21 @@ public static class TransferTools
                 fs,
                 ctx.Identity,
                 recipient.PublicIdentity,
-                filename: Path.GetFileName(path),
+                filename: Path.GetFileName(resolvedPath),
                 mimeType: string.IsNullOrEmpty(mime) ? "application/octet-stream" : mime,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
         var contentHash = write.SignedManifest.ContentHash();
-        var txHash = await ctx.Chain.FileRegistry
-            .SendAsync(recipient.Address, write.ManifestCid, contentHash, ctx.Identity.Secp256k1, cancellationToken)
-            .ConfigureAwait(false);
+        string txHash;
+        await ctx.SigningLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            txHash = await ctx.Chain.FileRegistry
+                .SendAsync(recipient.Address, write.ManifestCid, contentHash, ctx.Identity.Secp256k1, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally { ctx.SigningLock.Release(); }
 
         return JsonSerializer.Serialize(new
         {
@@ -103,10 +125,16 @@ public static class TransferTools
         CancellationToken cancellationToken)
     {
         const ulong lookback = 10_000;
+        const ulong maxSpan = 50_000; // most public RPCs reject wider eth_getLogs ranges
         var latest = await ctx.Chain.FileRegistry.GetLatestBlockNumberAsync(cancellationToken).ConfigureAwait(false);
         var fromBlock = sinceBlock ?? (latest > lookback ? latest - lookback : 0UL);
         if (fromBlock > latest)
             throw new InvalidOperationException($"since_block ({fromBlock}) is past the chain head ({latest}).");
+        if (latest - fromBlock > maxSpan)
+            throw new InvalidOperationException(
+                $"Requested block range {fromBlock}..{latest} ({latest - fromBlock} blocks) exceeds the "
+                + $"{maxSpan}-block limit most RPC providers enforce on eth_getLogs. Raise since_block "
+                + "(e.g. to a recent block) or page through history in windows.");
 
         var events = await ctx.Chain.FileRegistry
             .GetInboxAsync(ctx.Identity.Address, fromBlock, latest, cancellationToken)
@@ -130,14 +158,17 @@ public static class TransferTools
     }
 
     [McpServerTool(Name = "receive_file")]
-    [Description("Fetch a manifest CID from IPFS, verify its signature, decrypt it, and write the plaintext to a local path (atomic). Returns sender + metadata. Pass expect_hash (the content_hash from the matching inbox entry) to corroborate the bytes against the on-chain record.")]
+    [Description("Fetch a manifest CID from IPFS, verify its signature, decrypt it, and write the plaintext to a local path (atomic). Returns sender + metadata. Pass expect_hash (the content_hash from the matching inbox entry) to corroborate the bytes against the on-chain record. If MCPTX_MCP_ROOT is set, out_path must be inside it.")]
     public static async Task<string> ReceiveFile(
         McpAgentContext ctx,
         [Description("The manifest CID to fetch (from an inbox entry).")] string cid,
-        [Description("Absolute output path to write the decrypted file to.")] string outPath,
+        [Description("Output path to write the decrypted file to. Confined to MCPTX_MCP_ROOT when set.")] string outPath,
         [Description("Optional 0x content hash from the inbox entry; when given, the manifest must match it or the receive is refused.")] string? expectHash,
         CancellationToken cancellationToken)
     {
+        // Confine the write to the workspace root (no-op when unconfined) so a
+        // host cannot clobber identity.json / autostart scripts / etc.
+        var resolvedOut = ctx.Workspace.Resolve(outPath, nameof(outPath));
         byte[]? expectedHash = null;
         if (!string.IsNullOrEmpty(expectHash))
         {
@@ -160,10 +191,10 @@ public static class TransferTools
         }
 
         var reader = new EnvelopeReader(ctx.Ipfs);
-        var result = await reader.ReceiveToFileAsync(cid, ctx.Identity, outPath, expectedHash, cancellationToken).ConfigureAwait(false);
+        var result = await reader.ReceiveToFileAsync(cid, ctx.Identity, resolvedOut, expectedHash, cancellationToken).ConfigureAwait(false);
         return JsonSerializer.Serialize(new
         {
-            output_path = outPath,
+            output_path = resolvedOut,
             sender = result.Manifest.Sender.ToString(),
             filename = result.Manifest.Filename,
             mime = result.Manifest.MimeType,

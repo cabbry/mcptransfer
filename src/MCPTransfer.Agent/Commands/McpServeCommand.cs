@@ -44,7 +44,19 @@ internal static class McpServeCommand
         try
         {
             var chain = Common.BuildChainClient(config); // may throw on malformed address
-            context = new McpAgentContext(identity, config, chain, ipfs);
+            var workspace = McpWorkspaceGuard.FromEnvironment();
+            if (workspace.IsUnconfined)
+            {
+                Console.Error.WriteLine(
+                    "Warning: MCPTX_MCP_ROOT is not set — send_file/receive_file can read and "
+                    + "write ANY path the server process can access. Set MCPTX_MCP_ROOT to a "
+                    + "directory to confine file access when exposing this server to an untrusted host.");
+            }
+            else
+            {
+                Console.Error.WriteLine($"MCP file access confined to: {workspace.Root}");
+            }
+            context = new McpAgentContext(identity, config, chain, ipfs, workspace);
 
             var builder = Host.CreateApplicationBuilder(args);
 

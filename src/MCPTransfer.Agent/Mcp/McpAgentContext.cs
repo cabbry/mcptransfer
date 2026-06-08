@@ -20,16 +20,29 @@ public sealed class McpAgentContext : IDisposable
     public EthereumChainClient Chain { get; }
     public IIpfsClient Ipfs { get; }
 
+    /// <summary>Optional filesystem confinement for send_file / receive_file.</summary>
+    public McpWorkspaceGuard Workspace { get; }
+
+    /// <summary>
+    /// Serializes state-changing chain operations (register_key / claim /
+    /// send_file). All sign with the same EOA and rely on auto-nonce, so two
+    /// concurrent tool calls would fetch the same pending nonce and one tx
+    /// would be rejected. Acquire this around any transaction submission.
+    /// </summary>
+    public SemaphoreSlim SigningLock { get; } = new(1, 1);
+
     public McpAgentContext(
         AgentIdentity identity,
         MCPTransferConfig config,
         EthereumChainClient chain,
-        IIpfsClient ipfs)
+        IIpfsClient ipfs,
+        McpWorkspaceGuard workspace)
     {
         Identity = identity;
         Config = config;
         Chain = chain;
         Ipfs = ipfs;
+        Workspace = workspace;
     }
 
     public void Dispose()
@@ -38,5 +51,6 @@ public sealed class McpAgentContext : IDisposable
         // client may (PinataIpfsClient's HttpClient via RetryingIpfsClient).
         if (Ipfs is IDisposable d)
             d.Dispose();
+        SigningLock.Dispose();
     }
 }

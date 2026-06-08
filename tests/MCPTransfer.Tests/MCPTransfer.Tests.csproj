@@ -6,6 +6,9 @@
     <IsTestProject>true</IsTestProject>
     <!-- Tests may use unused locals etc. -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- NU1608: inherited from the Agent reference (Nethereum's conservative
+         Logging.Abstractions ceiling vs the MCP/Hosting 10.x stack); benign. -->
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\MCPTransfer.Core\MCPTransfer.Core.csproj" />
+    <ProjectReference Include="..\..\src\MCPTransfer.Agent\MCPTransfer.Agent.csproj" />
   </ItemGroup>
 
 </Project>
