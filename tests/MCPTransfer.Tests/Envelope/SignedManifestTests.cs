@@ -185,6 +185,8 @@ public class SignedManifestTests
             // Property order intentionally preserved, but indented to introduce whitespace.
             writer.WritePropertyName("manifest");
             writer.WriteRawValue(root.GetProperty("manifest").GetRawText(), skipInputValidation: false);
+            writer.WriteString("mldsa_signature", root.GetProperty("mldsa_signature").GetString());
+            writer.WriteString("sender_mldsa", root.GetProperty("sender_mldsa").GetString());
             writer.WriteString("sender_secp256k1", root.GetProperty("sender_secp256k1").GetString());
             writer.WriteString("signature", root.GetProperty("signature").GetString());
             writer.WriteEndObject();
@@ -205,6 +207,85 @@ public class SignedManifestTests
             json,
             "\"sender_secp256k1\":\"[^\"]*\"",
             "\"sender_secp256k1\":\"" + Convert.ToBase64String(new byte[32]) + "\"");
+
+        Assert.Throws<InvalidOperationException>(
+            () => SignedManifest.FromJsonBytes(Encoding.UTF8.GetBytes(corrupted)));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Hybrid (ECDSA + ML-DSA) signature — v2
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Create_ProducesBothSignatures_WithExpectedSizes()
+    {
+        var (sender, manifest) = BuildSampleForSender();
+        var signed = SignedManifest.Create(manifest, sender);
+
+        Assert.Equal(Secp256k1KeyPair.SignatureByteLength, signed.Signature.Length);
+        Assert.Equal(MlDsaKeyPair.SignatureByteLength, signed.MlDsaSignature.Length);
+        Assert.Equal(MlDsaKeyPair.PublicKeyByteLength, signed.SenderMlDsaPublicKey.Length);
+        Assert.True(signed.VerifySignature());
+    }
+
+    [Fact]
+    public void DualSignature_RoundTripsThroughJson()
+    {
+        var (sender, manifest) = BuildSampleForSender();
+        var signed = SignedManifest.Create(manifest, sender);
+
+        var parsed = SignedManifest.FromJsonBytes(signed.ToCanonicalJsonBytes());
+        Assert.True(parsed.VerifySignature());
+        Assert.Equal(signed.MlDsaSignature.ToArray(), parsed.MlDsaSignature.ToArray());
+        Assert.Equal(signed.SenderMlDsaPublicKey.ToArray(), parsed.SenderMlDsaPublicKey.ToArray());
+    }
+
+    [Fact]
+    public void VerifySignature_FailsAfterMlDsaSignatureBitFlip()
+    {
+        var (sender, manifest) = BuildSampleForSender();
+        var signed = SignedManifest.Create(manifest, sender);
+
+        var json = Encoding.UTF8.GetString(signed.ToCanonicalJsonBytes());
+        var randomMlDsaSig = Convert.ToBase64String(
+            System.Security.Cryptography.RandomNumberGenerator.GetBytes(MlDsaKeyPair.SignatureByteLength));
+        var corrupted = System.Text.RegularExpressions.Regex.Replace(
+            json, "\"mldsa_signature\":\"[^\"]*\"", "\"mldsa_signature\":\"" + randomMlDsaSig + "\"");
+
+        var tampered = SignedManifest.FromJsonBytes(Encoding.UTF8.GetBytes(corrupted));
+        Assert.False(tampered.VerifySignature());
+    }
+
+    [Fact]
+    public void VerifySignature_FailsIfMlDsaPubkeySwapped()
+    {
+        // Swap the sender_mldsa pubkey for a different (well-formed) one. The
+        // ECDSA signature is computed over manifest || mldsaPubkey, so changing
+        // the ML-DSA pubkey breaks the ECDSA binding even before the ML-DSA
+        // signature is checked.
+        var (sender, manifest) = BuildSampleForSender();
+        var signed = SignedManifest.Create(manifest, sender);
+
+        var attacker = MlDsaKeyPair.Generate();
+        var attackerPkB64 = Convert.ToBase64String(attacker.PublicKeyEncoded);
+
+        var json = Encoding.UTF8.GetString(signed.ToCanonicalJsonBytes());
+        var corrupted = System.Text.RegularExpressions.Regex.Replace(
+            json, "\"sender_mldsa\":\"[^\"]*\"", "\"sender_mldsa\":\"" + attackerPkB64 + "\"");
+
+        var tampered = SignedManifest.FromJsonBytes(Encoding.UTF8.GetBytes(corrupted));
+        Assert.False(tampered.VerifySignature());
+    }
+
+    [Fact]
+    public void FromJsonBytes_RejectsWrongMlDsaPubkeyLength()
+    {
+        var (sender, manifest) = BuildSampleForSender();
+        var signed = SignedManifest.Create(manifest, sender);
+        var json = Encoding.UTF8.GetString(signed.ToCanonicalJsonBytes());
+
+        var corrupted = System.Text.RegularExpressions.Regex.Replace(
+            json, "\"sender_mldsa\":\"[^\"]*\"", "\"sender_mldsa\":\"" + Convert.ToBase64String(new byte[100]) + "\"");
 
         Assert.Throws<InvalidOperationException>(
             () => SignedManifest.FromJsonBytes(Encoding.UTF8.GetBytes(corrupted)));

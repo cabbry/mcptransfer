@@ -31,10 +31,12 @@ public class AgentIdentityTests
     {
         var ec = Secp256k1KeyPair.Generate();
         var kem = MlKemKeyPair.Generate();
+        var dsa = MlDsaKeyPair.Generate();
 
-        var identity = AgentIdentity.FromKeys(ec, kem);
+        var identity = AgentIdentity.FromKeys(ec, kem, dsa);
         Assert.Same(ec, identity.Secp256k1);
         Assert.Same(kem, identity.MlKem);
+        Assert.Same(dsa, identity.MlDsa);
         Assert.Equal(ec.Address, identity.Address);
     }
 
@@ -43,8 +45,10 @@ public class AgentIdentityTests
     {
         var ec = Secp256k1KeyPair.Generate();
         var kem = MlKemKeyPair.Generate();
-        Assert.Throws<ArgumentNullException>(() => AgentIdentity.FromKeys(null!, kem));
-        Assert.Throws<ArgumentNullException>(() => AgentIdentity.FromKeys(ec, null!));
+        var dsa = MlDsaKeyPair.Generate();
+        Assert.Throws<ArgumentNullException>(() => AgentIdentity.FromKeys(null!, kem, dsa));
+        Assert.Throws<ArgumentNullException>(() => AgentIdentity.FromKeys(ec, null!, dsa));
+        Assert.Throws<ArgumentNullException>(() => AgentIdentity.FromKeys(ec, kem, null!));
     }
 
     [Fact]

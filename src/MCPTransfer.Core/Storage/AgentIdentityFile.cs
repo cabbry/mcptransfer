@@ -16,7 +16,11 @@ namespace MCPTransfer.Core.Storage;
 /// </remarks>
 public static class AgentIdentityFile
 {
-    public const int CurrentVersion = 1;
+    /// <summary>
+    /// v2 adds the ML-DSA-65 signing key. v1 files (secp256k1 + ML-KEM only)
+    /// are no longer loadable — regenerate with <c>mcptx keygen --force</c>.
+    /// </summary>
+    public const int CurrentVersion = 2;
 
     /// <summary><c>~/.mcptx/identity.json</c> (cross-platform user profile).</summary>
     public static string DefaultPath { get; } = Path.Combine(
@@ -107,6 +111,9 @@ public static class AgentIdentityFile
         {
             writer.WriteStartObject();
             writer.WriteString(
+                "mldsa_private_key",
+                Convert.ToBase64String(identity.MlDsa.PrivateKeyEncoded));
+            writer.WriteString(
                 "mlkem_private_key",
                 Convert.ToBase64String(identity.MlKem.PrivateKeyEncoded));
             writer.WriteString(
@@ -127,16 +134,22 @@ public static class AgentIdentityFile
         if (version != CurrentVersion)
         {
             throw new InvalidOperationException(
-                $"Unsupported identity file version: got {version}, expected {CurrentVersion}.");
+                $"Unsupported identity file version: got {version}, expected {CurrentVersion}. "
+                + (version < CurrentVersion
+                    ? "This identity predates the ML-DSA signing key; regenerate with 'mcptx keygen --force'."
+                    : "This file was written by a newer mcptx build."));
         }
 
         var ecHex = root.GetProperty("secp256k1_private_key").GetString()
             ?? throw new InvalidOperationException("Missing 'secp256k1_private_key'.");
         var mlkemB64 = root.GetProperty("mlkem_private_key").GetString()
             ?? throw new InvalidOperationException("Missing 'mlkem_private_key'.");
+        var mldsaB64 = root.GetProperty("mldsa_private_key").GetString()
+            ?? throw new InvalidOperationException("Missing 'mldsa_private_key'.");
 
         var ec = Secp256k1KeyPair.FromPrivateKeyHex(ecHex);
         var mlkem = MlKemKeyPair.FromEncodedPrivateKey(Convert.FromBase64String(mlkemB64));
-        return AgentIdentity.FromKeys(ec, mlkem);
+        var mldsa = MlDsaKeyPair.FromEncodedPrivateKey(Convert.FromBase64String(mldsaB64));
+        return AgentIdentity.FromKeys(ec, mlkem, mldsa);
     }
 }

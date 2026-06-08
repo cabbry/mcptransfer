@@ -24,18 +24,22 @@ internal static class WhoamiCommand
         var mlkemB64 = Convert.ToBase64String(mlkemBytes);
         var mlkemSha = Convert.ToHexString(SHA256.HashData(mlkemBytes)).ToLowerInvariant()[..16];
 
-        Console.WriteLine($"Address               : {identity.Address}");
-        Console.WriteLine($"secp256k1 public key  : 0x{Convert.ToHexString(identity.Secp256k1.PublicKeyCompressed).ToLowerInvariant()}");
+        var mldsaBytes = identity.MlDsa.PublicKeyEncoded;
+        var mldsaSha = Convert.ToHexString(SHA256.HashData(mldsaBytes)).ToLowerInvariant()[..16];
+
+        Console.WriteLine($"Address                : {identity.Address}");
+        Console.WriteLine($"secp256k1 public key   : 0x{Convert.ToHexString(identity.Secp256k1.PublicKeyCompressed).ToLowerInvariant()}");
         if (full)
         {
-            Console.WriteLine($"ML-KEM-768 public key : {mlkemB64}");
+            Console.WriteLine($"ML-KEM-768 public key  : {mlkemB64}");
             Console.WriteLine($"  ({mlkemBytes.Length} bytes)");
         }
         else
         {
-            Console.WriteLine($"ML-KEM-768 public key : {mlkemB64[..20]}...{mlkemB64[^8..]}");
+            Console.WriteLine($"ML-KEM-768 public key  : {mlkemB64[..20]}...{mlkemB64[^8..]}");
             Console.WriteLine($"  ({mlkemBytes.Length} bytes, sha256:{mlkemSha}, use --full to print)");
         }
+        Console.WriteLine($"ML-DSA-65 signing key  : {mldsaBytes.Length} bytes, sha256:{mldsaSha}");
 
         return Common.ExitSuccess;
     }
