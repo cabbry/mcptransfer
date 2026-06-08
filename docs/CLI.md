@@ -24,7 +24,8 @@ Override individual config fields at runtime:
 | `MCPTX_FILE_REGISTRY` | `chain.file_registry_address` |
 | `MCPTX_KEY_REGISTRY` | `chain.key_registry_address` |
 | `MCPTX_AGENT_DIRECTORY` | `chain.agent_directory_address` |
-| `MCPTX_IPFS_KIND` | `ipfs.kind` (`pinata` or `memory`) |
+| `MCPTX_IPFS_KIND` | `ipfs.kind` (`pinata`, `file`, or `memory`) |
+| `MCPTX_IPFS_DIR` | `ipfs.directory` (shared folder for the `file` backend) |
 | `MCPTX_GATEWAY_URL` | `ipfs.gateway_url` |
 | `PINATA_JWT` | `ipfs.pinata_jwt` |
 
@@ -160,7 +161,12 @@ mcptx inbox
 mcptx receive bafy... --out received.pdf
 ```
 
-The IPFS layer requires either a real Pinata JWT (`mcptx config init
---pinata-jwt $PINATA_JWT`) or sender + receiver running in the same
-process (memory mode — only for tests). Anvil running locally provides
-the chain layer.
+The IPFS layer can be: a **shared-folder file store** (`mcptx config init
+--ipfs-dir /shared/path` — both agents point at the same directory, works
+fully cross-process with no network), a real **Pinata JWT** (`--pinata-jwt
+$PINATA_JWT`), or **memory** (in-process, tests only). Anvil running locally
+provides the chain layer.
+
+This exact flow is verified end-to-end (single-chunk and multi-chunk 40 MiB,
+byte-identical round-trip) using the `--ipfs-dir` file backend against a
+local anvil.

@@ -73,9 +73,14 @@ dotnet run --project src/MCPTransfer.Agent -- inbox
 dotnet run --project src/MCPTransfer.Agent -- receive bafy... --out received.pdf
 ```
 
-`PINATA_JWT` is required for real IPFS network usage. For local testing
-without a JWT, set `MCPTX_IPFS_KIND=memory` and run sender + receiver in
-the same process (see Phase 1.10 e2e tests for the pattern).
+**IPFS backend** (precedence: `--ipfs-dir` > `--pinata-jwt` > memory):
+
+- `--ipfs-dir DIR` — a shared-folder **file store**. Two `mcptx` processes
+  pointing at the same directory exchange files with **no network provider**.
+  This is the recommended way to run a real local `send`→`receive` round-trip
+  (verified end-to-end against anvil, single- and multi-chunk).
+- `--pinata-jwt JWT` (or `PINATA_JWT` env) — real IPFS network pinning.
+- memory — in-process only, test-only (pins vanish on exit).
 
 Identity file format (plaintext JSON, see [src/MCPTransfer.Core/Storage/AgentIdentityFile.cs](src/MCPTransfer.Core/Storage/AgentIdentityFile.cs)):
 
