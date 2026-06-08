@@ -23,6 +23,7 @@
     <File Path="docs/CHAIN.md" />
     <File Path="docs/CLI.md" />
     <File Path="docs/CRYPTO.md" />
+    <File Path="docs/MCP.md" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/MCPTransfer.Agent/MCPTransfer.Agent.csproj" />

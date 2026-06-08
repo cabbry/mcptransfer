@@ -16,9 +16,10 @@ POC under construction.
 | Phase | Status |
 |-------|--------|
 | 0 — Bootstrap + crypto spike | done |
-| 1 — Envelope + chunking + IPFS (in-memory + Pinata) + CLI | done |
+| 1 — Envelope + chunking + IPFS (in-memory + Pinata + file) + CLI | done |
 | 2 — Smart contracts (FileRegistry, KeyRegistry, AgentDirectory) + C# chain client | done |
 | 3 — CLI send/inbox/receive on-chain + config layer | done (anvil-tested, Amoy-pending) |
+| 4 — MCP server (`mcptx mcp-serve`, 8 tools over stdio) | done |
 
 ## Repository layout
 
@@ -123,6 +124,29 @@ dotnet test --filter IntegrationTest_RealPinata
 ```
 
 Without the env var, the integration test is skipped silently.
+
+## MCP server
+
+`mcptx mcp-serve` runs a [Model Context Protocol](https://modelcontextprotocol.io)
+server over stdio, exposing MCPTransfer as 8 tools (`whoami`, `resolve`,
+`whois`, `inbox`, `register_key`, `claim`, `send_file`, `receive_file`) so an
+AI host can drive the whole protocol — *"send this report to alice-ai"* →
+on-chain handle resolution + hybrid-PQC encryption + IPFS pin + chain event.
+
+```json
+{
+  "mcpServers": {
+    "mcptransfer": {
+      "command": "dotnet",
+      "args": ["…/mcptx.dll", "mcp-serve"]
+    }
+  }
+}
+```
+
+> The server holds the agent's key and signs transactions on the host's
+> request — a deliberate authority grant. Full reference + trust model:
+> [docs/MCP.md](docs/MCP.md).
 
 ## On-chain layer
 
