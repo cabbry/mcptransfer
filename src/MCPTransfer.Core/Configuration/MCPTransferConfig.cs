@@ -32,16 +32,37 @@ public sealed record ChainConfigSection
 
     /// <summary>
     /// Project to the <see cref="ChainConfig"/> type used by the
-    /// <c>MCPTransfer.Core.Chain</c> services.
+    /// <c>MCPTransfer.Core.Chain</c> services. Throws a descriptive
+    /// <see cref="InvalidOperationException"/> if any contract address is
+    /// still empty (the <c>amoy</c> profile ships them blank to be filled
+    /// after deployment).
     /// </summary>
-    public ChainConfig ToCoreConfig() => new()
+    public ChainConfig ToCoreConfig()
     {
-        RpcUrl = RpcUrl,
-        ChainId = ChainId,
-        FileRegistryAddress = EthereumAddress.FromHex(FileRegistryAddress),
-        KeyRegistryAddress = EthereumAddress.FromHex(KeyRegistryAddress),
-        AgentDirectoryAddress = EthereumAddress.FromHex(AgentDirectoryAddress),
-    };
+        RequireAddress(FileRegistryAddress, nameof(FileRegistryAddress));
+        RequireAddress(KeyRegistryAddress, nameof(KeyRegistryAddress));
+        RequireAddress(AgentDirectoryAddress, nameof(AgentDirectoryAddress));
+
+        return new ChainConfig
+        {
+            RpcUrl = RpcUrl,
+            ChainId = ChainId,
+            FileRegistryAddress = EthereumAddress.FromHex(FileRegistryAddress),
+            KeyRegistryAddress = EthereumAddress.FromHex(KeyRegistryAddress),
+            AgentDirectoryAddress = EthereumAddress.FromHex(AgentDirectoryAddress),
+        };
+    }
+
+    private static void RequireAddress(string value, string field)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            throw new InvalidOperationException(
+                $"Chain address '{field}' is not configured. If you bootstrapped with the "
+                + "'amoy' profile, deploy the contracts and fill the three address fields in "
+                + "your config (~/.mcptx/config.json) or via the MCPTX_* environment variables.");
+        }
+    }
 }
 
 /// <summary>IPFS-backend slice of <see cref="MCPTransferConfig"/>.</summary>

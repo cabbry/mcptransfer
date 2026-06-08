@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
@@ -85,7 +86,19 @@ public static class MCPTransferConfigFile
 
     public static MCPTransferConfig Deserialize(ReadOnlySpan<byte> bytes)
     {
-        var config = JsonSerializer.Deserialize<MCPTransferConfig>(bytes, ReadOptions);
+        MCPTransferConfig? config;
+        try
+        {
+            config = JsonSerializer.Deserialize<MCPTransferConfig>(bytes, ReadOptions);
+        }
+        catch (JsonException ex)
+        {
+            // A present-but-incomplete file (e.g. missing the required `chain`
+            // or `ipfs` section) surfaces here as a JsonException; re-wrap it
+            // as a domain error the CLI can present cleanly.
+            throw new InvalidOperationException(
+                $"Config JSON is malformed or missing required fields: {ex.Message}", ex);
+        }
         if (config is null)
             throw new InvalidOperationException("Empty or null config payload.");
         if (config.Version != MCPTransferConfig.CurrentVersion)
@@ -150,7 +163,19 @@ public static class MCPTransferConfigFile
     private static long EnvLongOrDefault(string name, long fallback)
     {
         var v = Environment.GetEnvironmentVariable(name);
-        return long.TryParse(v, out var parsed) ? parsed : fallback;
+        if (string.IsNullOrEmpty(v))
+            return fallback;
+
+        // Parse machine-oriented integers invariantly; do NOT silently fall
+        // back when the variable is SET but unparseable — a botched chain-id
+        // override (e.g. "0x13882" or a stray space) must fail loud, because
+        // it is security-relevant (EIP-155 replay protection).
+        if (long.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            return parsed;
+
+        throw new InvalidOperationException(
+            $"Environment variable {name}='{v}' is not a valid integer. "
+            + "Use a plain decimal value (e.g. 80002 for Polygon Amoy).");
     }
 
     private static void TryRestrictUnixPermissions(string path)

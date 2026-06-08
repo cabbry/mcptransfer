@@ -65,7 +65,18 @@ internal static class Common
             Console.Error.WriteLine("Run 'mcptx config init' to bootstrap one.");
             return null;
         }
-        return await MCPTransferConfigFile.LoadAsync(path, applyEnvOverrides: true, ct).ConfigureAwait(false);
+        try
+        {
+            return await MCPTransferConfigFile.LoadAsync(path, applyEnvOverrides: true, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+        {
+            // Malformed/incomplete config file, unsupported version, or a bad
+            // MCPTX_* env override — present cleanly instead of a stack trace.
+            Console.Error.WriteLine($"Config at {path} is invalid: {ex.Message}");
+            Console.Error.WriteLine("Fix it by hand or re-run 'mcptx config init --force'.");
+            return null;
+        }
     }
 
     /// <summary>

@@ -8,7 +8,7 @@ namespace MCPTransfer.Core.Ipfs;
 /// glitches, 429 rate limits, 5xx) so the orchestrator only ever sees
 /// truly permanent failures.
 /// </summary>
-public sealed class RetryingIpfsClient : IIpfsClient
+public sealed class RetryingIpfsClient : IIpfsClient, IDisposable
 {
     private readonly IIpfsClient _inner;
     private readonly RetryPolicy _policy;
@@ -80,5 +80,17 @@ public sealed class RetryingIpfsClient : IIpfsClient
         if (jitteredMs < 0)
             jitteredMs = 0;
         return TimeSpan.FromMilliseconds(jitteredMs);
+    }
+
+    /// <summary>
+    /// Forwards disposal to the wrapped client when it owns disposable
+    /// resources (e.g. <see cref="PinataIpfsClient"/>'s HttpClient). Without
+    /// this, callers that dispose the decorator could never reach the inner
+    /// client's resources.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_inner is IDisposable d)
+            d.Dispose();
     }
 }

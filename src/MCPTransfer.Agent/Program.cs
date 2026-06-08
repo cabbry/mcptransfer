@@ -25,7 +25,7 @@ static async Task<int> RunAsync(string[] args)
             var other       => UnknownCommand(other),
         };
     }
-    catch (ArgumentException ex)
+    catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
     {
         return Common.Fail(ex.Message);
     }

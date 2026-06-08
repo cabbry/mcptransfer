@@ -141,6 +141,49 @@ public class MCPTransferConfigFileTests
     }
 
     [Fact]
+    public void ApplyEnvOverrides_ThrowsOnUnparseableChainId()
+    {
+        var baseline = Sample();
+        Environment.SetEnvironmentVariable("MCPTX_CHAIN_ID", "0x13882");
+        try
+        {
+            Assert.Throws<InvalidOperationException>(
+                () => MCPTransferConfigFile.ApplyEnvOverrides(baseline));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("MCPTX_CHAIN_ID", null);
+        }
+    }
+
+    [Fact]
+    public void Deserialize_WrapsMalformedJsonAsInvalidOperation()
+    {
+        // Present but missing the required `chain` section.
+        var json = "{ \"version\": 1, \"ipfs\": { \"kind\": \"memory\" } }";
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => MCPTransferConfigFile.Deserialize(System.Text.Encoding.UTF8.GetBytes(json)));
+        Assert.Contains("malformed or missing", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Deserialize_WrapsInvalidSyntaxAsInvalidOperation()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => MCPTransferConfigFile.Deserialize(System.Text.Encoding.UTF8.GetBytes("not json at all")));
+        Assert.Contains("malformed or missing", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ToCoreConfig_ThrowsFriendlyOnEmptyAddresses()
+    {
+        var amoy = DefaultProfiles.Amoy(); // ships empty addresses
+        var ex = Assert.Throws<InvalidOperationException>(() => amoy.Chain.ToCoreConfig());
+        Assert.Contains("not configured", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("FileRegistryAddress", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ChainConfigSection_ToCoreConfig_ProjectsAddresses()
     {
         var section = new ChainConfigSection

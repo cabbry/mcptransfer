@@ -126,6 +126,35 @@ public class RetryingIpfsClientTests
     }
 
     [Fact]
+    public void Dispose_ForwardsToInnerDisposableClient()
+    {
+        var inner = new DisposableIpfsClient();
+        var client = new RetryingIpfsClient(inner, FastPolicy);
+
+        Assert.False(inner.Disposed);
+        client.Dispose();
+        Assert.True(inner.Disposed);
+    }
+
+    [Fact]
+    public void Dispose_NoThrow_WhenInnerNotDisposable()
+    {
+        // ScriptedIpfsClient is not IDisposable — Dispose must be a no-op, not throw.
+        var client = new RetryingIpfsClient(new ScriptedIpfsClient(), FastPolicy);
+        client.Dispose();
+    }
+
+    private sealed class DisposableIpfsClient : IIpfsClient, IDisposable
+    {
+        public bool Disposed { get; private set; }
+        public Task<string> PinAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
+            => Task.FromResult("cid");
+        public Task<byte[]> FetchAsync(string cid, CancellationToken ct = default)
+            => Task.FromResult(Array.Empty<byte>());
+        public void Dispose() => Disposed = true;
+    }
+
+    [Fact]
     public void Constructor_RejectsOutOfRangeJitterFraction()
     {
         var inner = new ScriptedIpfsClient();

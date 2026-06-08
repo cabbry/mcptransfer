@@ -56,7 +56,21 @@ public sealed class AgentDirectoryClient : IAgentDirectoryClient
             .ConfigureAwait(false);
         if (string.IsNullOrEmpty(raw) || string.Equals(raw, ZeroAddress, StringComparison.OrdinalIgnoreCase))
             return null;
-        return EthereumAddress.FromHex(raw);
+
+        try
+        {
+            return EthereumAddress.FromHex(raw);
+        }
+        catch (ArgumentException ex)
+        {
+            // A well-behaved node returns a 20-byte address or the zero
+            // address; anything else means the RPC (or a proxy) is
+            // misbehaving — surface it as a clear error rather than letting
+            // a raw FromHex ArgumentException escape.
+            throw new InvalidOperationException(
+                $"AgentDirectory returned a malformed address '{raw}' resolving handle '{handle}'. "
+                + "The RPC endpoint may be untrustworthy.", ex);
+        }
     }
 
     /// <inheritdoc />
