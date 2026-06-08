@@ -72,27 +72,44 @@ public class InputValidationTests
     // ──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task KeyRegistry_PublishAsync_RejectsWrongPubkeyLength()
+    public async Task KeyRegistry_PublishAsync_RejectsWrongMlKemLength()
     {
         var client = new KeyRegistryClient(Sample());
         var signer = Secp256k1KeyPair.Generate();
+        var ec = new byte[KeyRegistryClient.Secp256k1CompressedLength];
 
         await Assert.ThrowsAsync<ArgumentException>(
-            () => client.PublishAsync(new byte[1183], signer));
+            () => client.PublishAsync(ec, new byte[1183], signer));
         await Assert.ThrowsAsync<ArgumentException>(
-            () => client.PublishAsync(new byte[1185], signer));
+            () => client.PublishAsync(ec, new byte[1185], signer));
         await Assert.ThrowsAsync<ArgumentException>(
-            () => client.PublishAsync(ReadOnlyMemory<byte>.Empty, signer));
+            () => client.PublishAsync(ec, ReadOnlyMemory<byte>.Empty, signer));
+    }
+
+    [Fact]
+    public async Task KeyRegistry_PublishAsync_RejectsWrongSecp256k1Length()
+    {
+        var client = new KeyRegistryClient(Sample());
+        var signer = Secp256k1KeyPair.Generate();
+        var ml = new byte[KeyRegistryClient.MlKem768PubkeyLength];
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.PublishAsync(new byte[32], ml, signer));
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.PublishAsync(new byte[34], ml, signer));
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.PublishAsync(ReadOnlyMemory<byte>.Empty, ml, signer));
     }
 
     [Fact]
     public async Task KeyRegistry_PublishAsync_RejectsNullSigner()
     {
         var client = new KeyRegistryClient(Sample());
-        var pk = new byte[KeyRegistryClient.MlKem768PubkeyLength];
+        var ec = new byte[KeyRegistryClient.Secp256k1CompressedLength];
+        var ml = new byte[KeyRegistryClient.MlKem768PubkeyLength];
 
         await Assert.ThrowsAsync<ArgumentNullException>(
-            () => client.PublishAsync(pk, null!));
+            () => client.PublishAsync(ec, ml, null!));
     }
 
     // ──────────────────────────────────────────────────────────────────

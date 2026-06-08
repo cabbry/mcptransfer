@@ -10,7 +10,12 @@ contract KeyRegistryTest is Test {
     address private alice = makeAddr("alice");
     address private bob = makeAddr("bob");
 
-    event KeyPublished(address indexed who, bytes mlkemPubkey, uint64 version);
+    event KeysPublished(
+        address indexed who,
+        bytes secp256k1Pubkey,
+        bytes mlkemPubkey,
+        uint64 version
+    );
 
     function setUp() public {
         registry = new KeyRegistry();
@@ -20,37 +25,45 @@ contract KeyRegistryTest is Test {
     // Happy path
     // ─────────────────────────────────────────────────────────────────────
 
-    function test_publish_then_get_round_trips() public {
-        bytes memory pk = _fakeMlKemPubkey(0xAA);
+    function test_publish_then_get_round_trips_both_keys() public {
+        bytes memory ecPk = _fakeSecp256k1Pubkey(0xAA);
+        bytes memory mlkemPk = _fakeMlKemPubkey(0xBB);
 
         vm.prank(alice);
-        registry.publish(pk);
+        registry.publish(ecPk, mlkemPk);
 
-        bytes memory stored = registry.get(alice);
-        assertEq(stored.length, registry.ML_KEM_768_PUBKEY_LENGTH());
-        assertEq(keccak256(stored), keccak256(pk), "stored pubkey must match input");
+        bytes memory storedEc = registry.getSecp256k1(alice);
+        bytes memory storedMlkem = registry.getMlKem(alice);
+        assertEq(storedEc.length, registry.SECP256K1_COMPRESSED_LENGTH());
+        assertEq(storedMlkem.length, registry.ML_KEM_768_PUBKEY_LENGTH());
+        assertEq(keccak256(storedEc), keccak256(ecPk), "stored secp256k1 must match input");
+        assertEq(keccak256(storedMlkem), keccak256(mlkemPk), "stored mlkem must match input");
     }
 
     function test_publish_emits_event_with_all_fields() public {
-        bytes memory pk = _fakeMlKemPubkey(0xCD);
+        bytes memory ecPk = _fakeSecp256k1Pubkey(0x11);
+        bytes memory mlkemPk = _fakeMlKemPubkey(0xCD);
 
         vm.expectEmit(true, false, false, true);
-        emit KeyPublished(alice, pk, 1);
+        emit KeysPublished(alice, ecPk, mlkemPk, 1);
 
         vm.prank(alice);
-        registry.publish(pk);
+        registry.publish(ecPk, mlkemPk);
     }
 
-    function test_publish_overwrites_previous_key_for_same_address() public {
-        bytes memory pk1 = _fakeMlKemPubkey(0x11);
-        bytes memory pk2 = _fakeMlKemPubkey(0x22);
+    function test_publish_overwrites_previous_keys_for_same_address() public {
+        bytes memory ec1 = _fakeSecp256k1Pubkey(0x11);
+        bytes memory ml1 = _fakeMlKemPubkey(0x11);
+        bytes memory ec2 = _fakeSecp256k1Pubkey(0x22);
+        bytes memory ml2 = _fakeMlKemPubkey(0x22);
 
         vm.prank(alice);
-        registry.publish(pk1);
+        registry.publish(ec1, ml1);
         vm.prank(alice);
-        registry.publish(pk2);
+        registry.publish(ec2, ml2);
 
-        assertEq(keccak256(registry.get(alice)), keccak256(pk2), "second publish must overwrite");
+        assertEq(keccak256(registry.getSecp256k1(alice)), keccak256(ec2));
+        assertEq(keccak256(registry.getMlKem(alice)), keccak256(ml2));
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -58,13 +71,11 @@ contract KeyRegistryTest is Test {
     // ─────────────────────────────────────────────────────────────────────
 
     function test_publish_only_updates_msg_sender_entry() public {
-        bytes memory pkAlice = _fakeMlKemPubkey(0xA1);
-
         vm.prank(alice);
-        registry.publish(pkAlice);
+        registry.publish(_fakeSecp256k1Pubkey(0xA1), _fakeMlKemPubkey(0xA2));
 
-        // Bob never published — must be empty.
-        assertEq(registry.get(bob).length, 0, "bob entry must stay empty");
+        assertEq(registry.getSecp256k1(bob).length, 0, "bob secp256k1 must stay empty");
+        assertEq(registry.getMlKem(bob).length, 0, "bob mlkem must stay empty");
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -72,40 +83,61 @@ contract KeyRegistryTest is Test {
     // ─────────────────────────────────────────────────────────────────────
 
     function test_get_returns_empty_bytes_for_unknown_address() public view {
-        bytes memory pk = registry.get(alice);
-        assertEq(pk.length, 0);
+        assertEq(registry.getSecp256k1(alice).length, 0);
+        assertEq(registry.getMlKem(alice).length, 0);
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Length validation
+    // Length validation — secp256k1
     // ─────────────────────────────────────────────────────────────────────
 
-    function test_publish_reverts_on_short_pubkey() public {
-        bytes memory shortPk = new bytes(1183);
-        vm.expectRevert(bytes("KeyRegistry: wrong pubkey length"));
+    function test_publish_reverts_on_short_secp256k1() public {
+        vm.expectRevert(bytes("KeyRegistry: wrong secp256k1 length"));
         vm.prank(alice);
-        registry.publish(shortPk);
+        registry.publish(new bytes(32), _fakeMlKemPubkey(0xFF));
     }
 
-    function test_publish_reverts_on_long_pubkey() public {
-        bytes memory longPk = new bytes(1185);
-        vm.expectRevert(bytes("KeyRegistry: wrong pubkey length"));
+    function test_publish_reverts_on_long_secp256k1() public {
+        vm.expectRevert(bytes("KeyRegistry: wrong secp256k1 length"));
         vm.prank(alice);
-        registry.publish(longPk);
+        registry.publish(new bytes(65), _fakeMlKemPubkey(0xFF));
     }
 
-    function test_publish_reverts_on_empty_pubkey() public {
-        vm.expectRevert(bytes("KeyRegistry: wrong pubkey length"));
+    // ─────────────────────────────────────────────────────────────────────
+    // Length validation — mlkem
+    // ─────────────────────────────────────────────────────────────────────
+
+    function test_publish_reverts_on_short_mlkem() public {
+        vm.expectRevert(bytes("KeyRegistry: wrong mlkem length"));
         vm.prank(alice);
-        registry.publish("");
+        registry.publish(_fakeSecp256k1Pubkey(0x11), new bytes(1183));
+    }
+
+    function test_publish_reverts_on_long_mlkem() public {
+        vm.expectRevert(bytes("KeyRegistry: wrong mlkem length"));
+        vm.prank(alice);
+        registry.publish(_fakeSecp256k1Pubkey(0x11), new bytes(1185));
+    }
+
+    function test_publish_reverts_on_empty_mlkem() public {
+        vm.expectRevert(bytes("KeyRegistry: wrong mlkem length"));
+        vm.prank(alice);
+        registry.publish(_fakeSecp256k1Pubkey(0x11), "");
     }
 
     // ─────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────
 
-    /// @dev Deterministic 1184-byte pseudo-pubkey for testing. NOT a real
-    ///      ML-KEM key — the contract never inspects internal structure.
+    function _fakeSecp256k1Pubkey(uint8 seed) private pure returns (bytes memory) {
+        bytes memory pk = new bytes(33);
+        pk[0] = 0x02; // compressed prefix
+        for (uint256 i = 1; i < pk.length; ++i) {
+            pk[i] = bytes1(uint8(uint256(keccak256(abi.encode(seed, i)))));
+        }
+        return pk;
+    }
+
     function _fakeMlKemPubkey(uint8 seed) private pure returns (bytes memory) {
         bytes memory pk = new bytes(1184);
         for (uint256 i; i < pk.length; ++i) {

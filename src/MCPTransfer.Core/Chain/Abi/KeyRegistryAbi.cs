@@ -11,27 +11,40 @@ internal static class KeyRegistryAbi
     [Function("publish")]
     public sealed class PublishFunction : FunctionMessage
     {
-        [Parameter("bytes", "mlkemPubkey", 1)]
+        [Parameter("bytes", "secp256k1Pubkey", 1)]
+        public byte[] Secp256k1Pubkey { get; set; } = Array.Empty<byte>();
+
+        [Parameter("bytes", "mlkemPubkey", 2)]
         public byte[] MlkemPubkey { get; set; } = Array.Empty<byte>();
     }
 
-    [Function("get", "bytes")]
-    public sealed class GetFunction : FunctionMessage
+    [Function("getSecp256k1", "bytes")]
+    public sealed class GetSecp256k1Function : FunctionMessage
     {
         [Parameter("address", "who", 1)]
         public string Who { get; set; } = string.Empty;
     }
 
-    [Event("KeyPublished")]
-    public sealed class KeyPublishedEventDto : IEventDTO
+    [Function("getMlKem", "bytes")]
+    public sealed class GetMlKemFunction : FunctionMessage
+    {
+        [Parameter("address", "who", 1)]
+        public string Who { get; set; } = string.Empty;
+    }
+
+    [Event("KeysPublished")]
+    public sealed class KeysPublishedEventDto : IEventDTO
     {
         [Parameter("address", "who", 1, true)]
         public string Who { get; set; } = string.Empty;
 
-        [Parameter("bytes", "mlkemPubkey", 2, false)]
+        [Parameter("bytes", "secp256k1Pubkey", 2, false)]
+        public byte[] Secp256k1Pubkey { get; set; } = Array.Empty<byte>();
+
+        [Parameter("bytes", "mlkemPubkey", 3, false)]
         public byte[] MlkemPubkey { get; set; } = Array.Empty<byte>();
 
-        [Parameter("uint64", "version", 3, false)]
+        [Parameter("uint64", "version", 4, false)]
         public ulong Version { get; set; }
     }
 }

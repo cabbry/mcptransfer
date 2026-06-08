@@ -57,10 +57,26 @@ public class EthereumChainClientTests
     }
 
     [Fact]
-    public void KeyRegistryClient_MlKemPubkeyLengthConstant_MatchesContract()
+    public void KeyRegistryClient_LengthConstants_MatchContract()
     {
-        // Mirror of KeyRegistry.ML_KEM_768_PUBKEY_LENGTH on the Solidity side.
+        // Mirror of KeyRegistry.{ML_KEM_768_PUBKEY_LENGTH, SECP256K1_COMPRESSED_LENGTH}.
         Assert.Equal(1184, KeyRegistryClient.MlKem768PubkeyLength);
         Assert.Equal(MlKemPublicKey.PublicKeyByteLength, KeyRegistryClient.MlKem768PubkeyLength);
+
+        Assert.Equal(33, KeyRegistryClient.Secp256k1CompressedLength);
+        Assert.Equal(Secp256k1KeyPair.PublicKeyCompressedByteLength, KeyRegistryClient.Secp256k1CompressedLength);
+    }
+
+    [Fact]
+    public void AgentPublicKeys_Empty_IsNotRegistered()
+    {
+        Assert.False(AgentPublicKeys.Empty.IsRegistered);
+    }
+
+    [Fact]
+    public void AgentPublicKeys_BothLengthsCorrect_IsRegistered()
+    {
+        var keys = new AgentPublicKeys(new byte[33], new byte[1184]);
+        Assert.True(keys.IsRegistered);
     }
 }

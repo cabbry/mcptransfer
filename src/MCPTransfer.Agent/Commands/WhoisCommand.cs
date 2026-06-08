@@ -8,7 +8,7 @@ internal static class WhoisCommand
 {
     public const string Usage =
         "  mcptx whois <handle|0xaddress> [--config PATH]\n"
-      + "      Aggregate lookup: address ↔ handle, ML-KEM presence + fingerprint.";
+      + "      Aggregate lookup: address ↔ handle, secp256k1 + ML-KEM presence + fingerprints.";
 
     public static async Task<int> RunAsync(string[] args, CancellationToken ct = default)
     {
@@ -21,7 +21,6 @@ internal static class WhoisCommand
         if (config is null) return Common.ExitError;
         var chain = Common.BuildChainClient(config);
 
-        // Resolve target -> address.
         EthereumAddress? address;
         string? handle;
         if (target.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
@@ -43,15 +42,22 @@ internal static class WhoisCommand
             }
         }
 
-        var mlkem = await chain.KeyRegistry.GetAsync(address, ct).ConfigureAwait(false);
-        var fp = mlkem.Length > 0
-            ? Convert.ToHexString(SHA256.HashData(mlkem)).ToLowerInvariant()[..16]
+        var keys = await chain.KeyRegistry.GetAsync(address, ct).ConfigureAwait(false);
+
+        var ecFp = keys.Secp256k1Compressed.Length > 0
+            ? Convert.ToHexString(SHA256.HashData(keys.Secp256k1Compressed)).ToLowerInvariant()[..16]
+            : "(none — not registered)";
+        var mlkemFp = keys.MlKem.Length > 0
+            ? Convert.ToHexString(SHA256.HashData(keys.MlKem)).ToLowerInvariant()[..16]
             : "(none — not registered)";
 
-        Console.WriteLine($"Address          : {address}");
-        Console.WriteLine($"Handle           : {handle ?? "(none)"}");
-        Console.WriteLine($"ML-KEM pubkey    : {(mlkem.Length > 0 ? $"{mlkem.Length} bytes" : "(none — not registered)")}");
-        Console.WriteLine($"  sha256 fp      : {fp}");
+        Console.WriteLine($"Address              : {address}");
+        Console.WriteLine($"Handle               : {handle ?? "(none)"}");
+        Console.WriteLine($"Registered           : {(keys.IsRegistered ? "yes (both keys present)" : "no")}");
+        Console.WriteLine($"secp256k1 pubkey     : {(keys.Secp256k1Compressed.Length > 0 ? $"{keys.Secp256k1Compressed.Length} bytes" : "(none)")}");
+        Console.WriteLine($"  sha256 fp          : {ecFp}");
+        Console.WriteLine($"ML-KEM-768 pubkey    : {(keys.MlKem.Length > 0 ? $"{keys.MlKem.Length} bytes" : "(none)")}");
+        Console.WriteLine($"  sha256 fp          : {mlkemFp}");
         return Common.ExitSuccess;
     }
 }
