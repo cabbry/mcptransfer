@@ -1,0 +1,45 @@
+using MCPTransfer.Core.Crypto;
+
+namespace MCPTransfer.Core.Chain;
+
+/// <summary>
+/// Wraps the on-chain <c>FileRegistry</c> contract.
+/// </summary>
+public interface IFileRegistryClient
+{
+    /// <summary>
+    /// Submit a <c>send(to, cid, contentHash)</c> transaction signed by
+    /// <paramref name="sender"/>. Returns the transaction hash; the
+    /// transaction is broadcast but the caller must use
+    /// <see cref="GetReceiptAsync"/> to confirm inclusion.
+    /// </summary>
+    Task<string> SendAsync(
+        EthereumAddress recipient,
+        string cid,
+        byte[] contentHash,
+        Secp256k1KeyPair sender,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stream all <c>FileSent</c> events addressed to <paramref name="me"/>
+    /// from <paramref name="fromBlock"/> (inclusive) onwards. Polls the RPC
+    /// in batches; yields one event at a time in block order.
+    /// </summary>
+    IAsyncEnumerable<FileSentEvent> WatchInboxAsync(
+        EthereumAddress me,
+        ulong fromBlock,
+        TimeSpan pollInterval,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Return all <c>FileSent</c> events addressed to <paramref name="me"/>
+    /// within the closed block range [<paramref name="fromBlock"/>,
+    /// <paramref name="toBlock"/>]. Single RPC round-trip (or batched
+    /// internally by the implementation if the range is wide).
+    /// </summary>
+    Task<IReadOnlyList<FileSentEvent>> GetInboxAsync(
+        EthereumAddress me,
+        ulong fromBlock,
+        ulong toBlock,
+        CancellationToken cancellationToken = default);
+}
