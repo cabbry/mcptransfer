@@ -12,7 +12,9 @@
     <File Path="contracts/foundry.toml" />
     <File Path="contracts/remappings.txt" />
     <File Path="contracts/src/FileRegistry.sol" />
+    <File Path="contracts/src/KeyRegistry.sol" />
     <File Path="contracts/test/FileRegistry.t.sol" />
+    <File Path="contracts/test/KeyRegistry.t.sol" />
   </Folder>
   <Folder Name="/docs/">
     <File Path="docs/CRYPTO.md" />
