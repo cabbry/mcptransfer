@@ -32,27 +32,46 @@ internal static class McpServeCommand
         var config = await Common.TryLoadConfigAsync(args, cancellationToken).ConfigureAwait(false);
         if (config is null) return Common.ExitError;
 
-        var chain = Common.BuildChainClient(config);
         var ipfs = Common.TryBuildIpfsClient(config, out var ipfsErr);
         if (ipfs is null)
             return Common.Fail(ipfsErr ?? "could not build IPFS client.");
 
-        var context = new McpAgentContext(identity, config, chain, ipfs);
+        // Owns disposable resources (the IPFS HttpClient). Until the host's DI
+        // container takes ownership (a successful Build), WE are responsible
+        // for disposing it on any failure path — otherwise a throw in
+        // BuildChainClient (bad address) or Build() leaks the HttpClient.
+        McpAgentContext? context = null;
+        try
+        {
+            var chain = Common.BuildChainClient(config); // may throw on malformed address
+            context = new McpAgentContext(identity, config, chain, ipfs);
 
-        var builder = Host.CreateApplicationBuilder(args);
+            var builder = Host.CreateApplicationBuilder(args);
 
-        // CRITICAL: stdout is the MCP protocol channel. Route all logs to
-        // stderr so they never corrupt the JSON-RPC stream.
-        builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
+            // CRITICAL: stdout is the MCP protocol channel. Route all logs to
+            // stderr so they never corrupt the JSON-RPC stream.
+            builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
 
-        builder.Services.AddSingleton(context);
-        builder.Services
-            .AddMcpServer()
-            .WithStdioServerTransport()
-            .WithToolsFromAssembly();
+            builder.Services.AddSingleton(context);
+            builder.Services
+                .AddMcpServer()
+                .WithStdioServerTransport()
+                .WithToolsFromAssembly();
 
-        using var host = builder.Build();
-        await host.RunAsync(cancellationToken).ConfigureAwait(false);
-        return Common.ExitSuccess;
+            using var host = builder.Build();
+            // The container now owns `context` and will dispose it on host
+            // shutdown — relinquish our finally-disposal to avoid double work.
+            context = null;
+            await host.RunAsync(cancellationToken).ConfigureAwait(false);
+            return Common.ExitSuccess;
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Common.Fail(ex.Message);
+        }
+        finally
+        {
+            context?.Dispose();
+        }
     }
 }

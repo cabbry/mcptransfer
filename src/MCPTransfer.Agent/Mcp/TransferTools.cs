@@ -143,7 +143,20 @@ public static class TransferTools
         {
             var span = expectHash.AsSpan();
             if (span.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) span = span[2..];
-            expectedHash = Convert.FromHexString(span);
+            try
+            {
+                expectedHash = Convert.FromHexString(span);
+            }
+            catch (FormatException)
+            {
+                throw new InvalidOperationException("expect_hash must be a hex string (optionally 0x-prefixed).");
+            }
+            if (expectedHash.Length != MCPTransfer.Core.Crypto.Hashes.Keccak256ByteLength)
+            {
+                throw new InvalidOperationException(
+                    $"expect_hash must be {MCPTransfer.Core.Crypto.Hashes.Keccak256ByteLength} bytes "
+                    + $"(a Keccak-256 hash); got {expectedHash.Length}.");
+            }
         }
 
         var reader = new EnvelopeReader(ctx.Ipfs);

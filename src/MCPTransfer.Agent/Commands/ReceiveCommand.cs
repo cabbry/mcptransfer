@@ -31,6 +31,10 @@ internal static class ReceiveCommand
             if (span.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) span = span[2..];
             try { expectedHash = Convert.FromHexString(span); }
             catch (FormatException) { return Common.Fail("--expect-hash must be a hex string (optionally 0x-prefixed)."); }
+            if (expectedHash.Length != MCPTransfer.Core.Crypto.Hashes.Keccak256ByteLength)
+                return Common.Fail(
+                    $"--expect-hash must be {MCPTransfer.Core.Crypto.Hashes.Keccak256ByteLength} bytes "
+                    + $"(a Keccak-256 hash); got {expectedHash.Length}.");
         }
 
         var identity = await Common.TryLoadIdentityAsync(args, ct).ConfigureAwait(false);

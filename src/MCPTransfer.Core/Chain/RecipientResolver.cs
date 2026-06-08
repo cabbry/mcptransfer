@@ -42,7 +42,17 @@ public static class RecipientResolver
 
         if (recipient.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
         {
-            address = EthereumAddress.FromHex(recipient);
+            try
+            {
+                address = EthereumAddress.FromHex(recipient);
+            }
+            catch (Exception ex) when (ex is ArgumentException or FormatException)
+            {
+                // Honor the documented contract: failures surface as
+                // InvalidOperationException, not a raw parse exception.
+                throw new InvalidOperationException(
+                    $"'{recipient}' is not a valid 0x Ethereum address: {ex.Message}", ex);
+            }
         }
         else
         {

@@ -215,6 +215,17 @@ public class MCPTransferConfigFileTests
     }
 
     [Fact]
+    public void ToCoreConfig_ThrowsFriendlyOnMalformedAddress()
+    {
+        var cfg = DefaultProfiles.AnvilLocal();
+        var bad = cfg with { Chain = cfg.Chain with { KeyRegistryAddress = "0xZZ" } };
+
+        var ex = Assert.Throws<InvalidOperationException>(() => bad.Chain.ToCoreConfig());
+        Assert.Contains("KeyRegistryAddress", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("not a valid", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ChainConfigSection_ToCoreConfig_ProjectsAddresses()
     {
         var section = new ChainConfigSection

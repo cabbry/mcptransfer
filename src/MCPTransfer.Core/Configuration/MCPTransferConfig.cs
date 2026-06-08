@@ -62,6 +62,18 @@ public sealed record ChainConfigSection
                 + "'amoy' profile, deploy the contracts and fill the three address fields in "
                 + "your config (~/.mcptx/config.json) or via the MCPTX_* environment variables.");
         }
+        // Validate the FORMAT here too, so a malformed-but-non-empty value
+        // (typo like '0xZZ') yields a clear field-named error instead of a
+        // raw FromHex ArgumentException/FormatException later.
+        try
+        {
+            _ = EthereumAddress.FromHex(value);
+        }
+        catch (Exception ex) when (ex is ArgumentException or FormatException)
+        {
+            throw new InvalidOperationException(
+                $"Chain address '{field}' = '{value}' is not a valid 0x Ethereum address: {ex.Message}", ex);
+        }
     }
 }
 
