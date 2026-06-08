@@ -1,16 +1,21 @@
+using MCPTransfer.Core.Crypto;
 using MCPTransfer.Core.Envelope;
 
 namespace MCPTransfer.Agent.Commands;
 
 internal static class ReceiveCommand
 {
+    /// <summary>How many recent blocks to scan when auto-corroborating a CID.</summary>
+    private const ulong DefaultCorroborationLookback = 50_000;
+
     public const string Usage =
-        "  mcptx receive <cid> --out PATH [--expect-hash 0x...] [--identity PATH] [--config PATH]\n"
-      + "      Fetch the SignedManifest at <cid> from IPFS, verify its signature\n"
-      + "      and tags, then atomically decrypt to <out>.\n"
-      + "      --expect-hash : the content hash from the FileSent event ('mcptx inbox'\n"
-      + "                      prints it). When given, the fetched manifest must match it\n"
-      + "                      or the receive is refused (ties bytes to the on-chain record).";
+        "  mcptx receive <cid> --out PATH [--expect-hash 0x...] [--no-verify-onchain] [--since BLOCK]\n"
+      + "      Fetch the SignedManifest at <cid>, verify its signature + tags, then\n"
+      + "      atomically decrypt to <out>.\n"
+      + "      By default the CID is corroborated against the on-chain FileSent event\n"
+      + "      addressed to you: its content hash must match and the sender is shown\n"
+      + "      (reverse-resolved to a handle). --expect-hash pins the hash manually;\n"
+      + "      --no-verify-onchain skips the chain lookup (signature-only).";
 
     public static async Task<int> RunAsync(string[] args, CancellationToken ct = default)
     {
@@ -23,6 +28,8 @@ internal static class ReceiveCommand
         if (string.IsNullOrEmpty(outPath))
             return Common.Fail("missing --out PATH");
 
+        var noVerifyOnchain = Common.HasFlag(args, "--no-verify-onchain");
+
         var expectHashHex = Common.GetFlagValue(args, "--expect-hash");
         byte[]? expectedHash = null;
         if (!string.IsNullOrEmpty(expectHashHex))
@@ -31,9 +38,9 @@ internal static class ReceiveCommand
             if (span.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) span = span[2..];
             try { expectedHash = Convert.FromHexString(span); }
             catch (FormatException) { return Common.Fail("--expect-hash must be a hex string (optionally 0x-prefixed)."); }
-            if (expectedHash.Length != MCPTransfer.Core.Crypto.Hashes.Keccak256ByteLength)
+            if (expectedHash.Length != Hashes.Keccak256ByteLength)
                 return Common.Fail(
-                    $"--expect-hash must be {MCPTransfer.Core.Crypto.Hashes.Keccak256ByteLength} bytes "
+                    $"--expect-hash must be {Hashes.Keccak256ByteLength} bytes "
                     + $"(a Keccak-256 hash); got {expectedHash.Length}.");
         }
 
@@ -46,27 +53,65 @@ internal static class ReceiveCommand
         if (ipfs is null)
             return Common.Fail(ipfsErr ?? "could not build IPFS client.");
 
+        // Auto-corroborate against the on-chain FileSent event unless the user
+        // pinned a hash manually or opted out.
+        string? corroboratedSenderHandle = null;
+        var corroborated = false;
+        if (expectedHash is null && !noVerifyOnchain)
+        {
+            try
+            {
+                var chain = Common.BuildChainClient(config);
+                var latest = await chain.FileRegistry.GetLatestBlockNumberAsync(ct).ConfigureAwait(false);
+                var sinceArg = Common.GetFlagValue(args, "--since");
+                var fromBlock = ulong.TryParse(sinceArg, out var s)
+                    ? s
+                    : (latest > DefaultCorroborationLookback ? latest - DefaultCorroborationLookback : 0UL);
+
+                var ev = await chain.FileRegistry
+                    .FindByCidAsync(identity.Address, cid, fromBlock, latest, ct).ConfigureAwait(false);
+                if (ev is not null)
+                {
+                    expectedHash = ev.ContentHash;
+                    corroborated = true;
+                    corroboratedSenderHandle = await chain.AgentDirectory
+                        .ReverseResolveAsync(ev.From, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    Console.Error.WriteLine(
+                        $"  note: no on-chain FileSent event for this CID addressed to you in blocks "
+                        + $"{fromBlock}..{latest}; proceeding on the manifest signature alone. "
+                        + "Use --since to widen the scan, or --no-verify-onchain to silence this.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(
+                    $"  note: on-chain corroboration unavailable ({ex.GetType().Name}: {ex.Message}); "
+                    + "proceeding on the manifest signature alone.");
+            }
+        }
+
         try
         {
             var reader = new EnvelopeReader(ipfs);
 
             Console.WriteLine($"Fetching {cid}");
             Console.WriteLine($"  output: {outPath}");
-            if (expectedHash is null)
-            {
-                Console.Error.WriteLine(
-                    "  note: no --expect-hash given; authenticity rests on the manifest signature "
-                    + "alone, NOT corroborated against the on-chain FileSent content hash. "
-                    + "Run 'mcptx inbox' to get the expected hash.");
-            }
 
             var result = await reader.ReceiveToFileAsync(cid, identity, outPath, expectedHash, ct).ConfigureAwait(false);
 
             Console.WriteLine();
             Console.WriteLine("✓ decrypted");
-            if (expectedHash is not null)
-                Console.WriteLine("  ✓ matched on-chain content hash");
-            Console.WriteLine($"  from         : {result.Manifest.Sender}");
+            if (corroborated)
+                Console.WriteLine("  ✓ corroborated against on-chain FileSent (content hash matched)");
+            else if (expectedHash is not null)
+                Console.WriteLine("  ✓ matched the provided --expect-hash");
+            var senderLine = corroboratedSenderHandle is not null
+                ? $"{result.Manifest.Sender} ({corroboratedSenderHandle})"
+                : result.Manifest.Sender.ToString();
+            Console.WriteLine($"  from         : {senderLine}");
             Console.WriteLine($"  filename     : {result.Manifest.Filename ?? "(unset)"}");
             Console.WriteLine($"  mime         : {result.Manifest.MimeType ?? "(unset)"}");
             Console.WriteLine($"  total size   : {result.PlaintextBytesWritten} bytes");

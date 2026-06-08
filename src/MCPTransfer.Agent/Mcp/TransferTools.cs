@@ -169,6 +169,7 @@ public static class TransferTools
         // Confine the write to the workspace root (no-op when unconfined) so a
         // host cannot clobber identity.json / autostart scripts / etc.
         var resolvedOut = ctx.Workspace.Resolve(outPath, nameof(outPath));
+
         byte[]? expectedHash = null;
         if (!string.IsNullOrEmpty(expectHash))
         {
@@ -190,12 +191,34 @@ public static class TransferTools
             }
         }
 
+        // Auto-corroborate against the on-chain FileSent event when no explicit
+        // hash was given: pin the expected content hash and learn the sender.
+        string? corroboratedHandle = null;
+        var corroborated = false;
+        if (expectedHash is null)
+        {
+            const ulong lookback = 50_000;
+            var latest = await ctx.Chain.FileRegistry.GetLatestBlockNumberAsync(cancellationToken).ConfigureAwait(false);
+            var fromBlock = latest > lookback ? latest - lookback : 0UL;
+            var ev = await ctx.Chain.FileRegistry
+                .FindByCidAsync(ctx.Identity.Address, cid, fromBlock, latest, cancellationToken).ConfigureAwait(false);
+            if (ev is not null)
+            {
+                expectedHash = ev.ContentHash;
+                corroborated = true;
+                corroboratedHandle = await ctx.Chain.AgentDirectory
+                    .ReverseResolveAsync(ev.From, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
         var reader = new EnvelopeReader(ctx.Ipfs);
         var result = await reader.ReceiveToFileAsync(cid, ctx.Identity, resolvedOut, expectedHash, cancellationToken).ConfigureAwait(false);
         return JsonSerializer.Serialize(new
         {
             output_path = resolvedOut,
             sender = result.Manifest.Sender.ToString(),
+            sender_handle = corroboratedHandle,
+            onchain_corroborated = corroborated,
             filename = result.Manifest.Filename,
             mime = result.Manifest.MimeType,
             total_size = result.PlaintextBytesWritten,

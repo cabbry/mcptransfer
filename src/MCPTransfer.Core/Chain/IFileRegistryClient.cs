@@ -48,4 +48,18 @@ public interface IFileRegistryClient
     /// "from the last N blocks" sliding windows for <see cref="GetInboxAsync"/>.
     /// </summary>
     Task<ulong> GetLatestBlockNumberAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Find the <c>FileSent</c> event addressed to <paramref name="me"/> that
+    /// announced <paramref name="cid"/>, within the closed block range. Returns
+    /// the most recent match, or <c>null</c> if no such announcement exists in
+    /// the range. Lets a recipient corroborate a received manifest against the
+    /// on-chain record (its <c>contentHash</c> and non-spoofable sender).
+    /// </summary>
+    Task<FileSentEvent?> FindByCidAsync(
+        EthereumAddress me,
+        string cid,
+        ulong fromBlock,
+        ulong toBlock,
+        CancellationToken cancellationToken = default);
 }

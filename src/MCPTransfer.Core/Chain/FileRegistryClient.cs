@@ -129,6 +129,24 @@ public sealed class FileRegistryClient : IFileRegistryClient
         return (ulong)block.Value;
     }
 
+    /// <inheritdoc />
+    public async Task<FileSentEvent?> FindByCidAsync(
+        EthereumAddress me,
+        string cid,
+        ulong fromBlock,
+        ulong toBlock,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(cid);
+        var events = await GetInboxAsync(me, fromBlock, toBlock, cancellationToken).ConfigureAwait(false);
+        // Most recent announcement of this CID to this recipient.
+        return events
+            .Where(e => string.Equals(e.Cid, cid, StringComparison.Ordinal))
+            .OrderByDescending(e => e.BlockNumber)
+            .ThenByDescending(e => e.LogIndex)
+            .FirstOrDefault();
+    }
+
     private static FileSentEvent Map(EventLog<FileRegistryAbi.FileSentEventDto> log)
     {
         return new FileSentEvent(
