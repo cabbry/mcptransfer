@@ -210,6 +210,34 @@ forge script script/Deploy.s.sol \
 
 Le script log les 3 adresses ; copier-coller dans `ChainConfig`.
 
+### Tests d'intégration (Anvil)
+
+La suite contient des tests d'intégration *live* (`tests/.../Integration/`) qui
+démarrent eux-mêmes un Anvil éphémère, déploient les trois contrats via
+`Deploy.s.sol`, puis exercent le cycle complet : publication de clés,
+revendication de handle, `FileSent` + inbox, et un round-trip d'enveloppe
+chiffrée de bout en bout (chiffrement → IPFS fichier → annonce on-chain →
+réception avec corroboration du content-hash on-chain).
+
+Ils sont **désactivés par défaut** (ils exigent une toolchain Foundry locale et
+ne doivent pas tourner dans la CI partagée). Pour les lancer :
+
+```powershell
+$env:MCPTX_RUN_ANVIL_TESTS = '1'          # active la suite (sinon : no-op)
+$env:MCPTX_FOUNDRY_BIN = 'E:\foundry'     # optionnel : dossier de anvil/forge
+                                          # (sinon résolu via PATH ou ~/.foundry/bin)
+dotnet test --filter "FullyQualifiedName~Integration"
+```
+
+Variables reconnues par la fixture :
+- `MCPTX_RUN_ANVIL_TESTS` — `1`/`true` pour activer ; sinon chaque test sort tôt.
+- `MCPTX_FOUNDRY_BIN` — dossier contenant `anvil`/`forge` (sinon PATH puis
+  `~/.foundry/bin`).
+- `MCPTX_ANVIL_PORT` — port TCP d'Anvil (défaut `8559`).
+
+Si Foundry est introuvable alors même que le gate est actif, la fixture reste
+désactivée (les tests no-op) plutôt que de faire échouer le run.
+
 ### Polygon Amoy
 
 Pré-requis :
