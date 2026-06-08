@@ -39,15 +39,16 @@ Cinq couches indépendantes, chacune avec un rôle précis :
 │  CHIFFREMENT     │  AES-256-GCM par chunk (16 MiB)          │
 │                  │  nonce = 8B random ‖ 4B chunk_idx        │
 ├──────────────────┼──────────────────────────────────────────┤
-│  SIGNATURE       │  ECDSA secp256k1 sur Keccak-256(manifest)│
+│  SIGNATURE       │  HYBRIDE : ECDSA secp256k1 + ML-DSA-65    │
+│                  │  (les deux signatures vérifiées)         │
 ├──────────────────┼──────────────────────────────────────────┤
 │  HASHES          │  Keccak-256 (cohérence EVM)              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 **Suite identifier officielle** : `Hybrid-secp256k1+MLKEM768-AES256GCM`.
-Versionnée dans chaque manifest pour permettre la migration future
-(notamment vers une signature hybride avec ML-DSA-65).
+Versionnée dans chaque manifest. Depuis la Phase 5, la signature est
+elle aussi hybride (ECDSA + ML-DSA-65) — cf. Couche 4.
 
 ---
 
@@ -310,7 +311,12 @@ donc plus sûre.
 
 ---
 
-## Couche 4 — Signature du manifest : ECDSA secp256k1
+## Couche 4 — Signature du manifest : hybride ECDSA secp256k1 + ML-DSA-65
+
+> **Mise à jour (Phase 5)** : la signature du manifest est désormais
+> **hybride** — classique **ECDSA secp256k1** + post-quantique
+> **ML-DSA-65** (FIPS 204, ex-Dilithium). Un manifest reste authentifiable
+> même face à un adversaire quantique futur capable de casser ECDSA.
 
 ### Quoi signer
 
@@ -324,6 +330,42 @@ Le **manifest entier** (JSON canonicalisé) qui contient :
 **Ce que ça protège** : un tiers ne peut pas republier le CID d'un envoi
 en se faisant passer pour sender. Et le recipient peut prouver à un
 tiers (auditeur, juge) qui a envoyé quoi.
+
+### Construction hybride et binding
+
+Le `SignedManifest` embarque **deux** pubkeys (secp256k1 + ML-DSA) et
+**deux** signatures :
+
+```
+ecdsa_sig  = ECDSA-secp256k1.Sign( Keccak256( manifest_bytes ‖ mldsa_pubkey ) )
+mldsa_sig  = ML-DSA-65.Sign( manifest_bytes )
+```
+
+Vérification (les trois doivent passer) :
+
+1. `secp256k1_pubkey` dérive vers `manifest.sender` (ancre d'identité) ;
+2. `ecdsa_sig` vérifie sur `Keccak256(manifest ‖ mldsa_pubkey)` — l'adresse
+   **vouche pour la pubkey ML-DSA** (binding) ;
+3. `mldsa_sig` vérifie sur `manifest_bytes` — authenticité **post-quantique**
+   du contenu.
+
+La pubkey ML-DSA n'est **pas** publiée on-chain : elle voyage dans le
+manifest, et l'ECDSA ancrée à l'adresse la lie. Donc aucun changement de
+contrat `KeyRegistry`.
+
+### ⚠️ Plafond inhérent du binding
+
+Tant que l'identité **est** une adresse Ethereum (ECDSA), le *lien*
+clé-PQC ↔ identité reste **classiquement sécurisé** : pour substituer la
+pubkey ML-DSA, il faut forger l'ECDSA (étape 2) — possible pour un
+adversaire quantique, mais à ce stade tout le modèle d'identité ECDSA est
+déjà tombé. **ML-DSA rend l'authenticité du *contenu* du manifest
+post-quantique, étant donné un binding de confiance ; il ne rend pas le
+lien clé→identité post-quantique.** Le faire exigerait une identité
+PQC-native (hors EVM) — hors scope.
+
+ML-KEM/ML-DSA tailles : pubkey ML-DSA-65 = 1952 B, signature = 3309 B
+(≈ +5,3 KB par manifest, négligeable face aux chunks).
 
 ### Pourquoi ECDSA secp256k1 et pas Schnorr/EdDSA
 
@@ -462,21 +504,22 @@ l'utilisateur voit une adresse d'apparence autoritaire.
 > nomme l'expéditeur via `msg.sender`, non spoofable), reverse-resolver
 > l'adresse en handle, et avertir si l'expéditeur n'est pas vérifié.
 
-### Note sur les signatures post-quantum
+### Note sur les signatures post-quantum — ✅ RÉSOLU (Phase 5)
 
-C'est la principale limite consciente.
+> **Statut : corrigé en code.** Le manifest est désormais **co-signé**
+> ECDSA secp256k1 **+ ML-DSA-65** (cf. Couche 4). Les deux signatures
+> doivent vérifier. Le contenu du manifest est donc authentifié de façon
+> post-quantique.
 
-**v2** ajoutera **ML-DSA-65** (FIPS 204, ex-Dilithium) en signature
-hybride : signer deux fois (ECDSA + ML-DSA), valider les deux.
-Coût : +3.3 KB par manifest, négligeable.
+Historiquement on gardait l'ECDSA seul pour v1 car la confidentialité
+("harvest now, decrypt later") était la menace **urgente** (déjà couverte
+par le KEM hybride), tandis qu'une signature forgée nécessite l'ordinateur
+quantique *au moment de la forge*. Phase 5 ferme néanmoins ce maillon.
 
-On garde l'ECDSA seul pour v1 parce que :
-
-1. La confidentialité ("harvest now, decrypt later") est la menace
-   **urgente** — un attaquant peut stocker aujourd'hui. Les signatures
-   forgées dans 20 ans pour réécrire l'historique, c'est un problème
-   mais moins prioritaire.
-2. Le manifest a un champ `suite` versionné → migration v2 facile.
+**Plafond restant** (cf. Couche 4 → « Plafond inhérent du binding ») : le
+*lien* clé-PQC ↔ identité reste ancré ECDSA tant que l'identité est une
+adresse Ethereum. Lever ce plafond = identité PQC-native, hors EVM, hors
+scope POC.
 
 ---
 

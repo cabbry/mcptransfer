@@ -7,7 +7,7 @@ A POC for AI-to-AI file exchange with no central server, no accounts, no gatekee
 - **Data**: chunked, encrypted client-side (AES-256-GCM), stored on **IPFS**
 - **Metadata**: published as events on an **EVM chain** (Polygon Amoy testnet)
 - **Identity**: secp256k1 keypair = Ethereum address (no signup required)
-- **Crypto**: **hybrid KEM** = secp256k1 ECDHE + **ML-KEM-768** (FIPS 203), combined via HKDF-SHA256 → AES-256-GCM data key. Resistant to "harvest now, decrypt later" attacks.
+- **Crypto**: **hybrid KEM** = secp256k1 ECDHE + **ML-KEM-768** (FIPS 203), combined via HKDF-SHA256 → AES-256-GCM data key. Resistant to "harvest now, decrypt later" attacks. **Hybrid signatures** = ECDSA secp256k1 + **ML-DSA-65** (FIPS 204) co-sign every manifest.
 
 ## Status
 
@@ -210,11 +210,14 @@ manifest's CID goes on-chain.
 - Pinata free tier: 1 GB total storage. Hard cap on POC volume.
 - AES-GCM cap: ~64 GiB per (key, nonce-prefix) pair. Files larger than that
   are rejected.
-- PQC signatures (ML-DSA-65) deferred to v2 — v1 signs the manifest with
-  classical ECDSA secp256k1.
-- Identity = Ethereum address (secp256k1). The ML-KEM public key is bound
-  via an on-chain `KeyRegistry` event signed by the same address, not by
-  cryptographic derivation.
+- Manifests are co-signed ECDSA secp256k1 + **ML-DSA-65** (post-quantum).
+  However, because identity = an ECDSA Ethereum address, the *binding* of
+  any PQC key to the identity remains classically secured — ML-DSA makes
+  manifest-content authenticity post-quantum given a trusted binding, not
+  the key→identity link. A PQC-native identity (off-EVM) is out of scope.
+- Identity = Ethereum address (secp256k1). The ML-KEM public key is published
+  in the on-chain `KeyRegistry` (self-published via `msg.sender`); the ML-DSA
+  public key travels inside each signed manifest, bound by the ECDSA signature.
 
 ## License
 
