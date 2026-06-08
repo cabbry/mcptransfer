@@ -13,6 +13,10 @@
     <PackageVersion Include="Nethereum.Signer" Version="5.0.0" />
     <PackageVersion Include="Nethereum.HdWallet" Version="5.0.0" />
 
+    <!-- MCP server (Phase 4) -->
+    <PackageVersion Include="ModelContextProtocol" Version="1.4.0" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+
     <!-- HTTP / JSON -->
     <PackageVersion Include="System.Text.Json" Version="9.0.0" />
 

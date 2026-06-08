@@ -21,6 +21,7 @@ static async Task<int> RunAsync(string[] args)
             "send"          => await SendCommand.RunAsync(args),
             "inbox"         => await InboxCommand.RunAsync(args),
             "receive"       => await ReceiveCommand.RunAsync(args),
+            "mcp-serve"     => await McpServeCommand.RunAsync(args),
             "help" or "--help" or "-h" => PrintUsage(),
             var other       => UnknownCommand(other),
         };
@@ -55,6 +56,8 @@ static int PrintUsage()
     Console.WriteLine(InboxCommand.Usage);
     Console.WriteLine();
     Console.WriteLine(ReceiveCommand.Usage);
+    Console.WriteLine();
+    Console.WriteLine(McpServeCommand.Usage);
     Console.WriteLine();
     Console.WriteLine("  mcptx help");
     Console.WriteLine("      Show this message.");

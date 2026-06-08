@@ -4,10 +4,23 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>MCPTransfer.Agent</RootNamespace>
     <AssemblyName>mcptx</AssemblyName>
+    <!--
+      NU1608: Nethereum 5.0.0 declares a conservative `< 10.0.0` ceiling on
+      Microsoft.Extensions.Logging.Abstractions, but the ModelContextProtocol /
+      Hosting 10.x stack resolves 10.0.7. The 10.x logging abstractions are
+      backward-compatible, so this version-constraint warning is benign here.
+      Scoped to this project only — warnings-as-errors stays on elsewhere.
+    -->
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\MCPTransfer.Core\MCPTransfer.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
   </ItemGroup>
 
 </Project>
