@@ -20,6 +20,7 @@
     <File Path="contracts/test/KeyRegistry.t.sol" />
   </Folder>
   <Folder Name="/docs/">
+    <File Path="docs/CHAIN.md" />
     <File Path="docs/CRYPTO.md" />
   </Folder>
   <Folder Name="/src/">

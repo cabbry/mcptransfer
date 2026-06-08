@@ -17,7 +17,7 @@ POC under construction.
 |-------|--------|
 | 0 — Bootstrap + crypto spike | done |
 | 1 — Envelope + chunking + IPFS (in-memory + Pinata) + CLI | done |
-| 2 — Smart contracts (FileRegistry, KeyRegistry, AgentDirectory) + C# chain client | in progress |
+| 2 — Smart contracts (FileRegistry, KeyRegistry, AgentDirectory) + C# chain client | done (anvil-pending) |
 | 3 — CLI send/watch/receive on-chain + Amoy deployment | pending |
 
 ## Repository layout
@@ -99,6 +99,37 @@ dotnet test --filter IntegrationTest_RealPinata
 ```
 
 Without the env var, the integration test is skipped silently.
+
+## On-chain layer
+
+Three immutable contracts on Polygon Amoy (or Anvil locally):
+
+- **FileRegistry** — emits `FileSent(from, to, cid, contentHash, ts)`
+- **KeyRegistry** — `mapping(address => bytes)` for ML-KEM-768 public keys
+- **AgentDirectory** — first-come-first-served `handle ↔ address` registry (`alice-ai` style)
+
+C# wrappers in `MCPTransfer.Core.Chain` (Nethereum-backed):
+
+```csharp
+var chain = new EthereumChainClient(new ChainConfig
+{
+    RpcUrl                = "https://rpc-amoy.polygon.technology",
+    ChainId               = ChainConfig.AmoyChainId,
+    FileRegistryAddress   = EthereumAddress.FromHex("0x..."),
+    KeyRegistryAddress    = EthereumAddress.FromHex("0x..."),
+    AgentDirectoryAddress = EthereumAddress.FromHex("0x..."),
+});
+
+// Resolve a handle and look up the recipient's PQC pubkey
+var bob = await chain.AgentDirectory.ResolveAsync("bob");
+var bobMlKem = await chain.KeyRegistry.GetAsync(bob!);
+
+// Announce a transfer
+var tx = await chain.FileRegistry.SendAsync(
+    bob!, manifestCid, contentHash, alice.Secp256k1);
+```
+
+> Détails complets : [docs/CHAIN.md](docs/CHAIN.md). Contracts source : [contracts/](contracts/).
 
 ## Cryptographic construction (planned)
 
