@@ -81,7 +81,9 @@ internal static class Common
 
     /// <summary>
     /// Load the local agent identity (honouring <c>--identity PATH</c>).
-    /// Returns null and prints a helpful error if the file is missing.
+    /// Encrypted (v3) files are decrypted with the passphrase from the
+    /// <c>MCPTX_PASSPHRASE</c> environment variable. Returns null and prints
+    /// a helpful error if the file is missing or cannot be decrypted.
     /// </summary>
     public static async Task<AgentIdentity?> TryLoadIdentityAsync(string[] args, CancellationToken ct = default)
     {
@@ -92,7 +94,18 @@ internal static class Common
             Console.Error.WriteLine("Run 'mcptx keygen' first.");
             return null;
         }
-        return await AgentIdentityFile.LoadAsync(path, ct).ConfigureAwait(false);
+        var passphrase = Environment.GetEnvironmentVariable(AgentIdentityFile.PassphraseEnvVar);
+        try
+        {
+            return await AgentIdentityFile.LoadAsync(path, passphrase, ct).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Missing/wrong passphrase, tampered file, unsupported version —
+            // all surface here with actionable messages.
+            Console.Error.WriteLine($"Could not load identity at {path}: {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>
