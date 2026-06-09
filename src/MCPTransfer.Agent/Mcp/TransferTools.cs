@@ -18,18 +18,15 @@ public static class TransferTools
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
     [McpServerTool(Name = "register_key")]
-    [Description("Publish this agent's secp256k1 + ML-KEM-768 public keys to the on-chain KeyRegistry. Signs a transaction and spends gas. Required before this agent can receive files.")]
+    [Description("Publish this agent's keys to the on-chain KeyRegistry: secp256k1 in clear plus a keccak256 commitment to the ML-KEM-768 key (whose full bytes are pinned to IPFS first). Signs a transaction and spends gas. Required before this agent can receive files.")]
     public static async Task<string> RegisterKey(McpAgentContext ctx, CancellationToken cancellationToken)
     {
-        var ec = ctx.Identity.Secp256k1.PublicKeyCompressed.ToArray();
-        var ml = ctx.Identity.MlKem.PublicKey.Bytes.ToArray();
-
-        string txHash;
+        KeyPublication.Result result;
         await ctx.SigningLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            txHash = await ctx.Chain.KeyRegistry
-                .PublishAsync(ec, ml, ctx.Identity.Secp256k1, cancellationToken)
+            result = await KeyPublication
+                .PublishAsync(ctx.Chain.KeyRegistry, ctx.Ipfs, ctx.Identity, cancellationToken)
                 .ConfigureAwait(false);
         }
         finally { ctx.SigningLock.Release(); }
@@ -37,9 +34,10 @@ public static class TransferTools
         return JsonSerializer.Serialize(new
         {
             address = ctx.Identity.Address.ToString(),
-            tx_hash = txHash,
-            secp256k1_fingerprint = DirectoryTools.Fingerprint(ec),
-            mlkem_fingerprint = DirectoryTools.Fingerprint(ml),
+            tx_hash = result.TxHash,
+            secp256k1_fingerprint = DirectoryTools.Fingerprint(ctx.Identity.Secp256k1.PublicKeyCompressed),
+            mlkem_hash = "0x" + Convert.ToHexString(result.MlKemHash).ToLowerInvariant(),
+            mlkem_cid = result.MlKemCid,
         }, Json);
     }
 
@@ -77,7 +75,7 @@ public static class TransferTools
         if (!File.Exists(resolvedPath))
             throw new InvalidOperationException($"File not found: {resolvedPath}");
 
-        var recipient = await RecipientResolver.ResolveAsync(ctx.Chain, to, cancellationToken).ConfigureAwait(false);
+        var recipient = await RecipientResolver.ResolveAsync(ctx.Chain, ctx.Ipfs, to, cancellationToken).ConfigureAwait(false);
 
         EnvelopeWriteResult write;
         await using (var fs = new FileStream(resolvedPath, FileMode.Open, FileAccess.Read, FileShare.Read))

@@ -47,17 +47,17 @@ internal static class WhoisCommand
         var ecFp = keys.Secp256k1Compressed.Length > 0
             ? Convert.ToHexString(SHA256.HashData(keys.Secp256k1Compressed)).ToLowerInvariant()[..16]
             : "(none — not registered)";
-        var mlkemFp = keys.MlKem.Length > 0
-            ? Convert.ToHexString(SHA256.HashData(keys.MlKem)).ToLowerInvariant()[..16]
+        var mlkemHash = keys.MlKemHash.Length > 0
+            ? "0x" + Convert.ToHexString(keys.MlKemHash).ToLowerInvariant()
             : "(none — not registered)";
 
         Console.WriteLine($"Address              : {address}");
         Console.WriteLine($"Handle               : {handle ?? "(none)"}");
-        Console.WriteLine($"Registered           : {(keys.IsRegistered ? "yes (both keys present)" : "no")}");
-        Console.WriteLine($"secp256k1 pubkey     : {(keys.Secp256k1Compressed.Length > 0 ? $"{keys.Secp256k1Compressed.Length} bytes" : "(none)")}");
+        Console.WriteLine($"Registered           : {(keys.IsRegistered ? "yes" : "no")}");
+        Console.WriteLine($"secp256k1 pubkey     : {(keys.Secp256k1Compressed.Length > 0 ? $"{keys.Secp256k1Compressed.Length} bytes (on-chain)" : "(none)")}");
         Console.WriteLine($"  sha256 fp          : {ecFp}");
-        Console.WriteLine($"ML-KEM-768 pubkey    : {(keys.MlKem.Length > 0 ? $"{keys.MlKem.Length} bytes" : "(none)")}");
-        Console.WriteLine($"  sha256 fp          : {mlkemFp}");
+        Console.WriteLine($"ML-KEM-768 commitment: {mlkemHash}");
+        Console.WriteLine($"  key cid            : {(string.IsNullOrEmpty(keys.MlKemCid) ? "(none)" : keys.MlKemCid)}");
         return Common.ExitSuccess;
     }
 }

@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using MCPTransfer.Core.Crypto;
+using MCPTransfer.Core.Ipfs;
 
 namespace MCPTransfer.Core.Chain;
 
@@ -22,19 +24,25 @@ public static class RecipientResolver
     /// Resolve <paramref name="recipient"/> to a verified public identity:
     /// <list type="number">
     /// <item>handle → address via <c>AgentDirectory</c> (or parse a 0x address);</item>
-    /// <item>fetch both public keys from <c>KeyRegistry</c>;</item>
+    /// <item>read the key entry from <c>KeyRegistry</c> (secp256k1 in clear
+    /// + ML-KEM hash commitment and CID);</item>
+    /// <item>fetch the full ML-KEM key from <paramref name="ipfs"/> by CID
+    /// and verify <c>keccak256(key)</c> matches the on-chain commitment —
+    /// the distribution channel is untrusted;</item>
     /// <item>verify the secp256k1 key derives to the declared address.</item>
     /// </list>
     /// Throws <see cref="InvalidOperationException"/> with a caller-friendly
-    /// message on any failure (unknown handle, unregistered keys, key/address
-    /// mismatch).
+    /// message on any failure (unknown handle, unregistered keys, commitment
+    /// mismatch, key/address mismatch).
     /// </summary>
     public static async Task<Resolved> ResolveAsync(
         EthereumChainClient chain,
+        IIpfsClient ipfs,
         string recipient,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(chain);
+        ArgumentNullException.ThrowIfNull(ipfs);
         ArgumentException.ThrowIfNullOrEmpty(recipient);
 
         EthereumAddress address;
@@ -71,14 +79,37 @@ public static class RecipientResolver
         if (!keys.IsRegistered)
         {
             throw new InvalidOperationException(
-                $"Recipient {address} has not registered both public keys. "
+                $"Recipient {address} has not registered its public keys. "
                 + "They must run 'register-key' before they can receive.");
+        }
+
+        // Fetch the full ML-KEM key from the off-chain store and verify it
+        // against the on-chain hash commitment. The CID/store is untrusted;
+        // the keccak256 check is what ties the bytes to the registration.
+        byte[] mlkemKey;
+        try
+        {
+            mlkemKey = await ipfs.FetchAsync(keys.MlKemCid, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new InvalidOperationException(
+                $"Could not fetch the recipient's ML-KEM key from the IPFS store "
+                + $"(cid '{keys.MlKemCid}'): {ex.Message} "
+                + "The recipient may have registered against a different IPFS backend.", ex);
+        }
+
+        if (!CryptographicOperations.FixedTimeEquals(Hashes.Keccak256(mlkemKey), keys.MlKemHash))
+        {
+            throw new InvalidOperationException(
+                $"The ML-KEM key fetched for {address} does not match its on-chain keccak256 "
+                + "commitment. The IPFS store served tampered or stale bytes; refusing to encrypt.");
         }
 
         AgentPublicIdentity publicIdentity;
         try
         {
-            publicIdentity = AgentPublicIdentity.FromBytes(keys.Secp256k1Compressed, keys.MlKem);
+            publicIdentity = AgentPublicIdentity.FromBytes(keys.Secp256k1Compressed, mlkemKey);
         }
         catch (Exception ex)
         {

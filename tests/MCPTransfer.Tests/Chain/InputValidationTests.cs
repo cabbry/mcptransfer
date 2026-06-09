@@ -71,19 +71,50 @@ public class InputValidationTests
     // KeyRegistry.PublishAsync
     // ──────────────────────────────────────────────────────────────────
 
+    private static byte[] NonZeroHash()
+    {
+        var hash = new byte[Hashes.Keccak256ByteLength];
+        hash[0] = 0x01;
+        return hash;
+    }
+
     [Fact]
-    public async Task KeyRegistry_PublishAsync_RejectsWrongMlKemLength()
+    public async Task KeyRegistry_PublishAsync_RejectsWrongHashLength()
     {
         var client = new KeyRegistryClient(Sample());
         var signer = Secp256k1KeyPair.Generate();
         var ec = new byte[KeyRegistryClient.Secp256k1CompressedLength];
 
         await Assert.ThrowsAsync<ArgumentException>(
-            () => client.PublishAsync(ec, new byte[1183], signer));
+            () => client.PublishAsync(ec, new byte[31], "cid", signer));
         await Assert.ThrowsAsync<ArgumentException>(
-            () => client.PublishAsync(ec, new byte[1185], signer));
+            () => client.PublishAsync(ec, new byte[33], "cid", signer));
         await Assert.ThrowsAsync<ArgumentException>(
-            () => client.PublishAsync(ec, ReadOnlyMemory<byte>.Empty, signer));
+            () => client.PublishAsync(ec, ReadOnlyMemory<byte>.Empty, "cid", signer));
+    }
+
+    [Fact]
+    public async Task KeyRegistry_PublishAsync_RejectsAllZeroHash()
+    {
+        var client = new KeyRegistryClient(Sample());
+        var signer = Secp256k1KeyPair.Generate();
+        var ec = new byte[KeyRegistryClient.Secp256k1CompressedLength];
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.PublishAsync(ec, new byte[Hashes.Keccak256ByteLength], "cid", signer));
+    }
+
+    [Fact]
+    public async Task KeyRegistry_PublishAsync_RejectsEmptyOrOversizeCid()
+    {
+        var client = new KeyRegistryClient(Sample());
+        var signer = Secp256k1KeyPair.Generate();
+        var ec = new byte[KeyRegistryClient.Secp256k1CompressedLength];
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.PublishAsync(ec, NonZeroHash(), "", signer));
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.PublishAsync(ec, NonZeroHash(), new string('a', 129), signer));
     }
 
     [Fact]
@@ -91,14 +122,13 @@ public class InputValidationTests
     {
         var client = new KeyRegistryClient(Sample());
         var signer = Secp256k1KeyPair.Generate();
-        var ml = new byte[KeyRegistryClient.MlKem768PubkeyLength];
 
         await Assert.ThrowsAsync<ArgumentException>(
-            () => client.PublishAsync(new byte[32], ml, signer));
+            () => client.PublishAsync(new byte[32], NonZeroHash(), "cid", signer));
         await Assert.ThrowsAsync<ArgumentException>(
-            () => client.PublishAsync(new byte[34], ml, signer));
+            () => client.PublishAsync(new byte[34], NonZeroHash(), "cid", signer));
         await Assert.ThrowsAsync<ArgumentException>(
-            () => client.PublishAsync(ReadOnlyMemory<byte>.Empty, ml, signer));
+            () => client.PublishAsync(ReadOnlyMemory<byte>.Empty, NonZeroHash(), "cid", signer));
     }
 
     [Fact]
@@ -106,10 +136,47 @@ public class InputValidationTests
     {
         var client = new KeyRegistryClient(Sample());
         var ec = new byte[KeyRegistryClient.Secp256k1CompressedLength];
-        var ml = new byte[KeyRegistryClient.MlKem768PubkeyLength];
 
         await Assert.ThrowsAsync<ArgumentNullException>(
-            () => client.PublishAsync(ec, ml, null!));
+            () => client.PublishAsync(ec, NonZeroHash(), "cid", null!));
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Blocklist.SetBlockedAsync / AgentDirectory.TransferAsync
+    // ──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Blocklist_SetBlockedAsync_RejectsSelfBlock()
+    {
+        var config = Sample() with
+        {
+            BlocklistAddress = EthereumAddress.FromHex("0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"),
+        };
+        var client = new BlocklistClient(config);
+        var signer = Secp256k1KeyPair.Generate();
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.SetBlockedAsync(signer.Address, blocked: true, signer));
+    }
+
+    [Fact]
+    public void Blocklist_Client_RequiresConfiguredAddress()
+    {
+        Assert.Throws<ArgumentException>(() => new BlocklistClient(Sample()));
+    }
+
+    [Fact]
+    public async Task AgentDirectory_TransferAsync_RejectsSelfTransferAndEmptyHandle()
+    {
+        var client = new AgentDirectoryClient(Sample());
+        var signer = Secp256k1KeyPair.Generate();
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.TransferAsync("alice-ai", signer.Address, signer));
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.TransferAsync("", AnyAddress, signer));
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            () => client.TransferAsync("alice-ai", AnyAddress, null!));
     }
 
     // ──────────────────────────────────────────────────────────────────

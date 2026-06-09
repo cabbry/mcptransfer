@@ -86,7 +86,10 @@ public static class DirectoryTools
             handle,
             registered = keys.IsRegistered,
             secp256k1_fingerprint = keys.Secp256k1Compressed.Length > 0 ? Fingerprint(keys.Secp256k1Compressed) : null,
-            mlkem_fingerprint = keys.MlKem.Length > 0 ? Fingerprint(keys.MlKem) : null,
+            mlkem_hash = keys.MlKemHash.Length > 0
+                ? "0x" + Convert.ToHexString(keys.MlKemHash).ToLowerInvariant()
+                : null,
+            mlkem_cid = string.IsNullOrEmpty(keys.MlKemCid) ? null : keys.MlKemCid,
         }, Json);
     }
 

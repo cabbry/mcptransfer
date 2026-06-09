@@ -28,4 +28,12 @@ public sealed record ChainConfig
 
     /// <summary>Address of the deployed <c>AgentDirectory</c> contract.</summary>
     public required EthereumAddress AgentDirectoryAddress { get; init; }
+
+    /// <summary>
+    /// Address of the deployed <c>Blocklist</c> contract, or <c>null</c> if
+    /// no blocklist is configured (inbox filtering is then skipped and the
+    /// block/unblock commands are unavailable). Optional so configs written
+    /// before v2 keep loading.
+    /// </summary>
+    public EthereumAddress? BlocklistAddress { get; init; }
 }

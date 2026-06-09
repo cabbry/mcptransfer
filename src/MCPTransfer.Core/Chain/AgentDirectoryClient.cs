@@ -41,6 +41,33 @@ public sealed class AgentDirectoryClient : IAgentDirectoryClient
     }
 
     /// <inheritdoc />
+    public async Task<string> TransferAsync(
+        string handle,
+        EthereumAddress newOwner,
+        Secp256k1KeyPair self,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(handle);
+        ArgumentNullException.ThrowIfNull(newOwner);
+        ArgumentNullException.ThrowIfNull(self);
+        if (newOwner == self.Address)
+            throw new ArgumentException("Cannot transfer a handle to yourself.", nameof(newOwner));
+
+        var web3 = Web3Factory.CreateSigning(self, _config);
+        var handler = web3.Eth.GetContractTransactionHandler<AgentDirectoryAbi.TransferFunction>();
+        var fn = new AgentDirectoryAbi.TransferFunction
+        {
+            Handle = handle,
+            NewOwner = newOwner.LowerHex,
+        };
+
+        var receipt = await handler
+            .SendRequestAndWaitForReceiptAsync(_config.AgentDirectoryAddress.LowerHex, fn, cancellationToken)
+            .ConfigureAwait(false);
+        return receipt.TransactionHash;
+    }
+
+    /// <inheritdoc />
     public async Task<EthereumAddress?> ResolveAsync(
         string handle,
         CancellationToken cancellationToken = default)

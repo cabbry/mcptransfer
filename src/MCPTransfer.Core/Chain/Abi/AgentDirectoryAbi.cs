@@ -37,6 +37,33 @@ internal static class AgentDirectoryAbi
         public string Address { get; set; } = string.Empty;
     }
 
+    [Function("transfer")]
+    public sealed class TransferFunction : FunctionMessage
+    {
+        [Parameter("string", "handle", 1)]
+        public string Handle { get; set; } = string.Empty;
+
+        [Parameter("address", "newOwner", 2)]
+        public string NewOwner { get; set; } = string.Empty;
+    }
+
+    [Event("HandleTransferred")]
+    public sealed class HandleTransferredEventDto : IEventDTO
+    {
+        // Indexed string topic = keccak256(handle), surfaced as raw bytes.
+        [Parameter("string", "handleHash", 1, true)]
+        public byte[] HandleHash { get; set; } = Array.Empty<byte>();
+
+        [Parameter("address", "from", 2, true)]
+        public string From { get; set; } = string.Empty;
+
+        [Parameter("address", "to", 3, true)]
+        public string To { get; set; } = string.Empty;
+
+        [Parameter("string", "handle", 4, false)]
+        public string Handle { get; set; } = string.Empty;
+    }
+
     [Event("HandleClaimed")]
     public sealed class HandleClaimedEventDto : IEventDTO
     {

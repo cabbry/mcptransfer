@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using MCPTransfer.Core.Chain;
 
 namespace MCPTransfer.Agent.Commands;
 
@@ -6,8 +7,9 @@ internal static class RegisterKeyCommand
 {
     public const string Usage =
         "  mcptx register-key [--identity PATH] [--config PATH]\n"
-      + "      Publish the local secp256k1 + ML-KEM-768 public keys to KeyRegistry.\n"
-      + "      Both are required: secp256k1 for ECDH, ML-KEM for PQC encapsulation.";
+      + "      Publish the local keys to KeyRegistry: secp256k1 in clear (ECDH) plus\n"
+      + "      a keccak256 commitment to the ML-KEM-768 key, whose full bytes are\n"
+      + "      pinned to the configured IPFS backend first (registry v2).";
 
     public static async Task<int> RunAsync(string[] args, CancellationToken ct = default)
     {
@@ -17,39 +19,36 @@ internal static class RegisterKeyCommand
         if (config is null) return Common.ExitError;
 
         var chain = Common.BuildChainClient(config);
+        var ipfs = Common.TryBuildIpfsClient(config, out var ipfsErr);
+        if (ipfs is null)
+            return Common.Fail(ipfsErr ?? "could not build IPFS client.");
 
-        var ecPubkey = identity.Secp256k1.PublicKeyCompressed;
-        var mlkemPubkey = identity.MlKem.PublicKey.Bytes;
+        var ecPubkey = identity.Secp256k1.PublicKeyCompressed.ToArray();
+        var mlkemPubkey = identity.MlKem.PublicKey.Bytes.ToArray();
         var ecSha = Convert.ToHexString(SHA256.HashData(ecPubkey)).ToLowerInvariant()[..16];
         var mlkemSha = Convert.ToHexString(SHA256.HashData(mlkemPubkey)).ToLowerInvariant()[..16];
 
         Console.WriteLine($"Publishing keys for {identity.Address}");
-        Console.WriteLine($"  secp256k1 sha256:{ecSha}    ({ecPubkey.Length} bytes)");
-        Console.WriteLine($"  mlkem     sha256:{mlkemSha}  ({mlkemPubkey.Length} bytes)");
+        Console.WriteLine($"  secp256k1 sha256:{ecSha}    ({ecPubkey.Length} bytes, stored on-chain)");
+        Console.WriteLine($"  mlkem     sha256:{mlkemSha}  ({mlkemPubkey.Length} bytes, pinned via {config.Ipfs.Kind})");
         Console.WriteLine($"  to chain {config.Chain.ChainId} via {config.Chain.RpcUrl}");
 
         try
         {
-            var txHash = await chain.KeyRegistry.PublishAsync(
-                ecPubkey.ToArray(),
-                mlkemPubkey.ToArray(),
-                identity.Secp256k1,
-                ct).ConfigureAwait(false);
-            Console.WriteLine($"  tx hash: {txHash}");
+            var result = await KeyPublication.PublishAsync(chain.KeyRegistry, ipfs, identity, ct)
+                .ConfigureAwait(false);
+            Console.WriteLine($"  mlkem cid : {result.MlKemCid}");
+            Console.WriteLine($"  mlkem hash: 0x{Convert.ToHexString(result.MlKemHash).ToLowerInvariant()}");
+            Console.WriteLine($"  tx hash   : {result.TxHash}");
 
+            // Round-trip: the on-chain entry must echo what we just published.
             var stored = await chain.KeyRegistry.GetAsync(identity.Address, ct).ConfigureAwait(false);
-            var storedEcSha = stored.Secp256k1Compressed.Length > 0
-                ? Convert.ToHexString(SHA256.HashData(stored.Secp256k1Compressed)).ToLowerInvariant()[..16]
-                : "(none)";
-            var storedMlkemSha = stored.MlKem.Length > 0
-                ? Convert.ToHexString(SHA256.HashData(stored.MlKem)).ToLowerInvariant()[..16]
-                : "(none)";
+            var ecMatches = stored.Secp256k1Compressed.AsSpan().SequenceEqual(ecPubkey);
+            var commitmentMatches = stored.MlKemHash.AsSpan().SequenceEqual(result.MlKemHash)
+                && stored.MlKemCid == result.MlKemCid;
 
-            Console.WriteLine($"  on-chain secp256k1 sha256:{storedEcSha}   ({stored.Secp256k1Compressed.Length} bytes)");
-            Console.WriteLine($"  on-chain mlkem     sha256:{storedMlkemSha}  ({stored.MlKem.Length} bytes)");
-
-            if (storedEcSha == ecSha && storedMlkemSha == mlkemSha)
-                Console.WriteLine("  ✓ round-trip verified");
+            if (ecMatches && commitmentMatches)
+                Console.WriteLine("  ✓ round-trip verified (on-chain entry matches)");
             else
                 Console.WriteLine("  ! round-trip mismatch — verify chain state");
 
@@ -58,6 +57,10 @@ internal static class RegisterKeyCommand
         catch (Exception ex)
         {
             return Common.Fail($"publish failed: {ex.Message}");
+        }
+        finally
+        {
+            if (ipfs is IDisposable d) d.Dispose();
         }
     }
 }

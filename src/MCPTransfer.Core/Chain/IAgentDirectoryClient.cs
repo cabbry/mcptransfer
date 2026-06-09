@@ -18,6 +18,19 @@ public interface IAgentDirectoryClient
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Submit a <c>transfer(handle, newOwner)</c> transaction signed by
+    /// <paramref name="self"/>, moving <paramref name="handle"/> (which
+    /// <paramref name="self"/> must own) to <paramref name="newOwner"/>
+    /// (which must not already own a handle). The previous owner is freed
+    /// and may claim a different handle later.
+    /// </summary>
+    Task<string> TransferAsync(
+        string handle,
+        EthereumAddress newOwner,
+        Secp256k1KeyPair self,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Resolve <paramref name="handle"/> to the owning address, or
     /// <c>null</c> if the handle is unclaimed.
     /// </summary>

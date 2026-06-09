@@ -4,7 +4,8 @@ using Nethereum.Contracts;
 namespace MCPTransfer.Core.Chain.Abi;
 
 /// <summary>
-/// Nethereum function / event ABI mirrors for <c>KeyRegistry</c>.
+/// Nethereum function / event ABI mirrors for <c>KeyRegistry</c> (v2:
+/// secp256k1 in clear + ML-KEM hash commitment and CID pointer).
 /// </summary>
 internal static class KeyRegistryAbi
 {
@@ -14,8 +15,11 @@ internal static class KeyRegistryAbi
         [Parameter("bytes", "secp256k1Pubkey", 1)]
         public byte[] Secp256k1Pubkey { get; set; } = Array.Empty<byte>();
 
-        [Parameter("bytes", "mlkemPubkey", 2)]
-        public byte[] MlkemPubkey { get; set; } = Array.Empty<byte>();
+        [Parameter("bytes32", "mlkemHash", 2)]
+        public byte[] MlkemHash { get; set; } = Array.Empty<byte>();
+
+        [Parameter("string", "mlkemCid", 3)]
+        public string MlkemCid { get; set; } = string.Empty;
     }
 
     [Function("getSecp256k1", "bytes")]
@@ -25,11 +29,21 @@ internal static class KeyRegistryAbi
         public string Who { get; set; } = string.Empty;
     }
 
-    [Function("getMlKem", "bytes")]
+    [Function("getMlKem", typeof(GetMlKemOutputDto))]
     public sealed class GetMlKemFunction : FunctionMessage
     {
         [Parameter("address", "who", 1)]
         public string Who { get; set; } = string.Empty;
+    }
+
+    [FunctionOutput]
+    public sealed class GetMlKemOutputDto : IFunctionOutputDTO
+    {
+        [Parameter("bytes32", "mlkemHash", 1)]
+        public byte[] MlkemHash { get; set; } = Array.Empty<byte>();
+
+        [Parameter("string", "mlkemCid", 2)]
+        public string MlkemCid { get; set; } = string.Empty;
     }
 
     [Event("KeysPublished")]
@@ -41,10 +55,13 @@ internal static class KeyRegistryAbi
         [Parameter("bytes", "secp256k1Pubkey", 2, false)]
         public byte[] Secp256k1Pubkey { get; set; } = Array.Empty<byte>();
 
-        [Parameter("bytes", "mlkemPubkey", 3, false)]
-        public byte[] MlkemPubkey { get; set; } = Array.Empty<byte>();
+        [Parameter("bytes32", "mlkemHash", 3, false)]
+        public byte[] MlkemHash { get; set; } = Array.Empty<byte>();
 
-        [Parameter("uint64", "version", 4, false)]
+        [Parameter("string", "mlkemCid", 4, false)]
+        public string MlkemCid { get; set; } = string.Empty;
+
+        [Parameter("uint64", "version", 5, false)]
         public ulong Version { get; set; }
     }
 }

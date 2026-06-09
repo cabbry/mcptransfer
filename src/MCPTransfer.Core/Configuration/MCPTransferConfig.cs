@@ -31,6 +31,13 @@ public sealed record ChainConfigSection
     public required string AgentDirectoryAddress { get; init; }
 
     /// <summary>
+    /// Address of the deployed <c>Blocklist</c> contract. OPTIONAL (may be
+    /// empty/absent in configs written before v2): when unset, inbox
+    /// filtering is skipped and block/unblock are unavailable.
+    /// </summary>
+    public string? BlocklistAddress { get; init; }
+
+    /// <summary>
     /// Project to the <see cref="ChainConfig"/> type used by the
     /// <c>MCPTransfer.Core.Chain</c> services. Throws a descriptive
     /// <see cref="InvalidOperationException"/> if any contract address is
@@ -42,6 +49,9 @@ public sealed record ChainConfigSection
         RequireAddress(FileRegistryAddress, nameof(FileRegistryAddress));
         RequireAddress(KeyRegistryAddress, nameof(KeyRegistryAddress));
         RequireAddress(AgentDirectoryAddress, nameof(AgentDirectoryAddress));
+        // Blocklist is optional — but if a value IS present it must parse.
+        if (!string.IsNullOrEmpty(BlocklistAddress))
+            RequireAddress(BlocklistAddress, nameof(BlocklistAddress));
 
         return new ChainConfig
         {
@@ -50,6 +60,9 @@ public sealed record ChainConfigSection
             FileRegistryAddress = EthereumAddress.FromHex(FileRegistryAddress),
             KeyRegistryAddress = EthereumAddress.FromHex(KeyRegistryAddress),
             AgentDirectoryAddress = EthereumAddress.FromHex(AgentDirectoryAddress),
+            BlocklistAddress = string.IsNullOrEmpty(BlocklistAddress)
+                ? null
+                : EthereumAddress.FromHex(BlocklistAddress),
         };
     }
 

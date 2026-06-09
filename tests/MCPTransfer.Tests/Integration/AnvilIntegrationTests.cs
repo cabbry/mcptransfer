@@ -27,22 +27,26 @@ public sealed class AnvilIntegrationTests
     private EthereumChainClient Chain => new(_anvil.Config);
 
     [Fact]
-    public async Task KeyRegistry_PublishThenGet_RoundTripsBothKeys()
+    public async Task KeyRegistry_PublishThenGet_RoundTripsEntry()
     {
         if (!_anvil.Enabled) return;
         var chain = Chain;
         var agent = AnvilFixture.Identity(1);
+        var mlkemKey = agent.MlKem.PublicKey.Bytes.ToArray();
+        var mlkemHash = Hashes.Keccak256(mlkemKey);
 
         await chain.KeyRegistry.PublishAsync(
             agent.Secp256k1.PublicKeyCompressed.ToArray(),
-            agent.MlKem.PublicKey.Bytes.ToArray(),
+            mlkemHash,
+            "cid-roundtrip-test",
             agent.Secp256k1);
 
         var got = await chain.KeyRegistry.GetAsync(agent.Address);
 
         Assert.True(got.IsRegistered);
         Assert.Equal(agent.Secp256k1.PublicKeyCompressed.ToArray(), got.Secp256k1Compressed);
-        Assert.Equal(agent.MlKem.PublicKey.Bytes.ToArray(), got.MlKem);
+        Assert.Equal(mlkemHash, got.MlKemHash);
+        Assert.Equal("cid-roundtrip-test", got.MlKemCid);
     }
 
     [Fact]
@@ -95,22 +99,24 @@ public sealed class AnvilIntegrationTests
         var alice = AnvilFixture.Identity(5); // sender
         var bob = AnvilFixture.Identity(6);   // recipient
 
-        // Recipient must be discoverable: publish keys + claim a handle.
-        await chain.KeyRegistry.PublishAsync(
-            bob.Secp256k1.PublicKeyCompressed.ToArray(), bob.MlKem.PublicKey.Bytes.ToArray(), bob.Secp256k1);
-        await chain.AgentDirectory.ClaimAsync("bob-e2e", bob.Secp256k1);
-        // Sender claims a handle so the recipient can reverse-resolve it.
-        await chain.AgentDirectory.ClaimAsync("alice-e2e", alice.Secp256k1);
-
         var ipfsDir = Path.Combine(Path.GetTempPath(), "mcptx-anvil-e2e-" + Guid.NewGuid().ToString("N"));
         try
         {
             var aliceIpfs = new FileIpfsClient(ipfsDir);
             var bobIpfs = new FileIpfsClient(ipfsDir); // same store, separate client = two "processes"
 
-            // Alice resolves Bob from the chain (AgentDirectory + KeyRegistry +
-            // key/address consistency check), then encrypts a multi-chunk file.
-            var recipient = await RecipientResolver.ResolveAsync(chain, "bob-e2e");
+            // Recipient must be discoverable: pin ML-KEM key + publish the
+            // commitment (registry v2), and claim a handle.
+            var publication = await KeyPublication.PublishAsync(chain.KeyRegistry, bobIpfs, bob);
+            Assert.Equal(Hashes.Keccak256(bob.MlKem.PublicKey.Bytes.ToArray()), publication.MlKemHash);
+            await chain.AgentDirectory.ClaimAsync("bob-e2e", bob.Secp256k1);
+            // Sender claims a handle so the recipient can reverse-resolve it.
+            await chain.AgentDirectory.ClaimAsync("alice-e2e", alice.Secp256k1);
+
+            // Alice resolves Bob from the chain (AgentDirectory + KeyRegistry),
+            // fetches his ML-KEM key from the shared store, verifies it against
+            // the on-chain commitment, then encrypts a multi-chunk file.
+            var recipient = await RecipientResolver.ResolveAsync(chain, aliceIpfs, "bob-e2e");
 
             var plaintext = RandomNumberGenerator.GetBytes(100 * 1024);
             EnvelopeWriteResult write;

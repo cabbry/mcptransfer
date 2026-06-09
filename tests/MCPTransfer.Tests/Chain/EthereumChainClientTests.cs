@@ -74,9 +74,38 @@ public class EthereumChainClientTests
     }
 
     [Fact]
-    public void AgentPublicKeys_BothLengthsCorrect_IsRegistered()
+    public void AgentPublicKeys_WellFormedEntry_IsRegistered()
     {
-        var keys = new AgentPublicKeys(new byte[33], new byte[1184]);
+        var hash = new byte[32];
+        hash[5] = 0xAB;
+        var keys = new AgentPublicKeys(new byte[33], hash, "cid");
         Assert.True(keys.IsRegistered);
+    }
+
+    [Fact]
+    public void AgentPublicKeys_AllZeroHashOrMissingCid_IsNotRegistered()
+    {
+        // A bytes32 mapping read on an unregistered address yields 32 zero
+        // bytes — that must NOT count as registered.
+        Assert.False(new AgentPublicKeys(new byte[33], new byte[32], "cid").IsRegistered);
+        var hash = new byte[32];
+        hash[0] = 1;
+        Assert.False(new AgentPublicKeys(new byte[33], hash, "").IsRegistered);
+    }
+
+    [Fact]
+    public void EthereumChainClient_BlocklistIsNullWhenUnconfigured()
+    {
+        Assert.Null(new EthereumChainClient(Sample()).Blocklist);
+    }
+
+    [Fact]
+    public void EthereumChainClient_BlocklistPresentWhenConfigured()
+    {
+        var config = Sample() with
+        {
+            BlocklistAddress = EthereumAddress.FromHex("0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"),
+        };
+        Assert.NotNull(new EthereumChainClient(config).Blocklist);
     }
 }

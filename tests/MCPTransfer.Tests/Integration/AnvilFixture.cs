@@ -111,6 +111,7 @@ public sealed class AnvilFixture : IAsyncLifetime
                 FileRegistryAddress = EthereumAddress.FromHex(addresses["FileRegistry"]),
                 KeyRegistryAddress = EthereumAddress.FromHex(addresses["KeyRegistry"]),
                 AgentDirectoryAddress = EthereumAddress.FromHex(addresses["AgentDirectory"]),
+                BlocklistAddress = EthereumAddress.FromHex(addresses["Blocklist"]),
             };
             Enabled = true;
         }
@@ -262,7 +263,7 @@ public sealed class AnvilFixture : IAsyncLifetime
             }
         }
 
-        foreach (var required in new[] { "FileRegistry", "KeyRegistry", "AgentDirectory" })
+        foreach (var required in new[] { "FileRegistry", "KeyRegistry", "AgentDirectory", "Blocklist" })
         {
             if (!map.ContainsKey(required))
                 throw new InvalidOperationException($"Deploy broadcast did not include {required}.");

@@ -122,6 +122,7 @@ public static class MCPTransferConfigFile
     /// <item><c>MCPTX_FILE_REGISTRY</c></item>
     /// <item><c>MCPTX_KEY_REGISTRY</c></item>
     /// <item><c>MCPTX_AGENT_DIRECTORY</c></item>
+    /// <item><c>MCPTX_BLOCKLIST</c></item>
     /// <item><c>MCPTX_IPFS_KIND</c></item>
     /// <item><c>MCPTX_GATEWAY_URL</c></item>
     /// <item><c>PINATA_JWT</c></item>
@@ -138,6 +139,9 @@ public static class MCPTransferConfigFile
             FileRegistryAddress = EnvOrDefault("MCPTX_FILE_REGISTRY", config.Chain.FileRegistryAddress),
             KeyRegistryAddress = EnvOrDefault("MCPTX_KEY_REGISTRY", config.Chain.KeyRegistryAddress),
             AgentDirectoryAddress = EnvOrDefault("MCPTX_AGENT_DIRECTORY", config.Chain.AgentDirectoryAddress),
+            BlocklistAddress = EnvOrDefault("MCPTX_BLOCKLIST", config.Chain.BlocklistAddress ?? string.Empty) is { Length: > 0 } b
+                ? b
+                : config.Chain.BlocklistAddress,
         };
 
         var ipfs = config.Ipfs with

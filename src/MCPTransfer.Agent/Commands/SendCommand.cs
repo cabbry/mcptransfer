@@ -37,58 +37,26 @@ internal static class SendCommand
         if (ipfs is null)
             return Common.Fail(ipfsErr ?? "could not build IPFS client.");
 
-        // Resolve recipient address (handle → address, or hex).
-        EthereumAddress recipient;
-        string? recipientHandleLabel = null;
-        if (toArg.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            try { recipient = EthereumAddress.FromHex(toArg); }
-            catch (ArgumentException ex) { return Common.Fail($"--to: {ex.Message}"); }
-        }
-        else
-        {
-            if (!HandleValidation.IsValid(toArg))
-                return Common.Fail($"--to: '{toArg}' is not a valid handle and doesn't look like an address.");
-            var resolved = await chain.AgentDirectory.ResolveAsync(toArg, ct).ConfigureAwait(false);
-            if (resolved is null)
-                return Common.Fail($"handle '{toArg}' is not claimed on chain.");
-            recipient = resolved;
-            recipientHandleLabel = toArg;
-        }
-
-        // Fetch recipient's keys (both must be present).
-        var recipientKeys = await chain.KeyRegistry.GetAsync(recipient, ct).ConfigureAwait(false);
-        if (!recipientKeys.IsRegistered)
-        {
-            return Common.Fail(
-                $"recipient {recipient} has not registered both public keys. "
-              + "They must run 'mcptx register-key' before they can receive.");
-        }
-
-        AgentPublicIdentity recipientPublic;
+        // Resolve + verify the recipient: handle → address, KeyRegistry entry,
+        // ML-KEM key fetched from IPFS and checked against the on-chain
+        // keccak256 commitment, secp256k1 key checked against the address.
+        RecipientResolver.Resolved resolvedRecipient;
         try
         {
-            recipientPublic = AgentPublicIdentity.FromBytes(
-                recipientKeys.Secp256k1Compressed,
-                recipientKeys.MlKem);
+            resolvedRecipient = await RecipientResolver
+                .ResolveAsync(chain, ipfs, toArg, ct).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
-            return Common.Fail($"recipient key material malformed: {ex.Message}");
+            if (ipfs is IDisposable disp) disp.Dispose();
+            return Common.Fail($"--to: {ex.Message}");
         }
 
-        // Verify the on-chain secp256k1 actually derives to the recipient address
-        // (defends against a misbehaving registry or man-in-the-middle proxy).
-        if (recipientPublic.Address != recipient)
-        {
-            return Common.Fail(
-                $"recipient secp256k1 pubkey derives to {recipientPublic.Address}, "
-              + $"which does not match the declared address {recipient}. Refusing to send.");
-        }
-
-        var label = recipientHandleLabel is null
+        var recipient = resolvedRecipient.Address;
+        var recipientPublic = resolvedRecipient.PublicIdentity;
+        var label = resolvedRecipient.Handle is null
             ? recipient.ToString()
-            : $"{recipientHandleLabel} ({recipient})";
+            : $"{resolvedRecipient.Handle} ({recipient})";
         Console.WriteLine($"Sending '{filePath}' to {label}");
         Console.WriteLine($"  mime: {mime}");
         Console.WriteLine($"  encrypting + uploading via {config.Ipfs.Kind} ...");
