@@ -134,8 +134,14 @@ public static class TransferTools
                 + $"{maxSpan}-block limit most RPC providers enforce on eth_getLogs. Raise since_block "
                 + "(e.g. to a recent block) or page through history in windows.");
 
-        var events = await ctx.Chain.FileRegistry
+        var raw = await ctx.Chain.FileRegistry
             .GetInboxAsync(ctx.Identity.Address, fromBlock, latest, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Drop events from senders on this agent's on-chain blocklist
+        // (no-op when no Blocklist contract is configured).
+        var filtered = await InboxFilter
+            .ApplyAsync(ctx.Chain.Blocklist, ctx.Identity.Address, raw, cancellationToken)
             .ConfigureAwait(false);
 
         return JsonSerializer.Serialize(new
@@ -143,8 +149,9 @@ public static class TransferTools
             address = ctx.Identity.Address.ToString(),
             from_block = fromBlock,
             to_block = latest,
-            count = events.Count,
-            items = events.Select(e => new
+            count = filtered.Kept.Count,
+            blocked_hidden = filtered.Hidden,
+            items = filtered.Kept.Select(e => new
             {
                 block = e.BlockNumber,
                 timestamp = e.Timestamp.ToString("u"),
@@ -152,6 +159,71 @@ public static class TransferTools
                 cid = e.Cid,
                 content_hash = "0x" + Convert.ToHexString(e.ContentHash).ToLowerInvariant(),
             }),
+        }, Json);
+    }
+
+    [McpServerTool(Name = "block_sender")]
+    [Description("Block a sender (handle or 0x address) on this agent's on-chain blocklist: their FileSent events are hidden from the inbox tool. Signs a transaction and spends gas. Reversible with unblock_sender.")]
+    public static Task<string> BlockSender(
+        McpAgentContext ctx,
+        [Description("The sender to block: a handle or a 0x Ethereum address.")] string sender,
+        CancellationToken cancellationToken)
+        => SetBlockedAsync(ctx, sender, blocked: true, cancellationToken);
+
+    [McpServerTool(Name = "unblock_sender")]
+    [Description("Remove a sender (handle or 0x address) from this agent's on-chain blocklist. Signs a transaction and spends gas.")]
+    public static Task<string> UnblockSender(
+        McpAgentContext ctx,
+        [Description("The sender to unblock: a handle or a 0x Ethereum address.")] string sender,
+        CancellationToken cancellationToken)
+        => SetBlockedAsync(ctx, sender, blocked: false, cancellationToken);
+
+    private static async Task<string> SetBlockedAsync(
+        McpAgentContext ctx, string sender, bool blocked, CancellationToken cancellationToken)
+    {
+        var blocklist = ctx.Chain.Blocklist
+            ?? throw new InvalidOperationException(
+                "No Blocklist contract configured (set 'blocklist_address' in the config "
+                + "or the MCPTX_BLOCKLIST env var).");
+
+        // Resolve handle → address if needed.
+        MCPTransfer.Core.Crypto.EthereumAddress address;
+        string? handle = null;
+        if (sender.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                address = MCPTransfer.Core.Crypto.EthereumAddress.FromHex(sender);
+            }
+            catch (Exception ex) when (ex is ArgumentException or FormatException)
+            {
+                throw new InvalidOperationException($"'{sender}' is not a valid 0x address: {ex.Message}", ex);
+            }
+        }
+        else
+        {
+            HandleValidation.Validate(sender);
+            address = await ctx.Chain.AgentDirectory.ResolveAsync(sender, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Handle '{sender}' is not claimed on chain.");
+            handle = sender;
+        }
+
+        string txHash;
+        await ctx.SigningLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            txHash = await blocklist
+                .SetBlockedAsync(address, blocked, ctx.Identity.Secp256k1, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally { ctx.SigningLock.Release(); }
+
+        return JsonSerializer.Serialize(new
+        {
+            sender = address.ToString(),
+            sender_handle = handle,
+            blocked,
+            tx_hash = txHash,
         }, Json);
     }
 

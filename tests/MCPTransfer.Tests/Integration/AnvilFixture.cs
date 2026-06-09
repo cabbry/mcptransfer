@@ -59,7 +59,7 @@ public sealed class AnvilFixture : IAsyncLifetime
         "0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e", // 6
         "0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356", // 7
         "0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97", // 8
-        "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dfde6f6a9d", // 9
+        "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6", // 9
     };
 
     public bool Enabled { get; private set; }

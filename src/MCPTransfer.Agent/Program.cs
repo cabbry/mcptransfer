@@ -17,6 +17,9 @@ static async Task<int> RunAsync(string[] args)
             "config"        => await ConfigCommand.RunAsync(args),
             "register-key"  => await RegisterKeyCommand.RunAsync(args),
             "claim"         => await ClaimCommand.RunAsync(args),
+            "transfer-handle" => await TransferHandleCommand.RunAsync(args),
+            "block"         => await BlockCommand.RunAsync(args, blocked: true),
+            "unblock"       => await BlockCommand.RunAsync(args, blocked: false),
             "resolve"       => await ResolveCommand.RunAsync(args),
             "whois"         => await WhoisCommand.RunAsync(args),
             "send"          => await SendCommand.RunAsync(args),
@@ -48,6 +51,10 @@ static int PrintUsage()
     Console.WriteLine(RegisterKeyCommand.Usage);
     Console.WriteLine();
     Console.WriteLine(ClaimCommand.Usage);
+    Console.WriteLine();
+    Console.WriteLine(TransferHandleCommand.Usage);
+    Console.WriteLine();
+    Console.WriteLine(BlockCommand.Usage);
     Console.WriteLine();
     Console.WriteLine(ResolveCommand.Usage);
     Console.WriteLine();

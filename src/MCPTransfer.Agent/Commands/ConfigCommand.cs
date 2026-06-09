@@ -63,6 +63,7 @@ internal static class ConfigCommand
         Console.WriteLine($"  FileRegistry    : {DisplayAddress(profile.Chain.FileRegistryAddress)}");
         Console.WriteLine($"  KeyRegistry     : {DisplayAddress(profile.Chain.KeyRegistryAddress)}");
         Console.WriteLine($"  AgentDirectory  : {DisplayAddress(profile.Chain.AgentDirectoryAddress)}");
+        Console.WriteLine($"  Blocklist       : {DisplayAddress(profile.Chain.BlocklistAddress ?? string.Empty)}");
         Console.WriteLine($"  IPFS kind       : {profile.Ipfs.Kind}");
         if (profile.Ipfs.Kind == IpfsConfigSection.KindPinata)
         {
@@ -87,6 +88,7 @@ internal static class ConfigCommand
         Console.WriteLine($"FileRegistry    : {DisplayAddress(config.Chain.FileRegistryAddress)}");
         Console.WriteLine($"KeyRegistry     : {DisplayAddress(config.Chain.KeyRegistryAddress)}");
         Console.WriteLine($"AgentDirectory  : {DisplayAddress(config.Chain.AgentDirectoryAddress)}");
+        Console.WriteLine($"Blocklist       : {DisplayAddress(config.Chain.BlocklistAddress ?? string.Empty)}");
         Console.WriteLine($"IPFS kind       : {config.Ipfs.Kind}");
         Console.WriteLine($"IPFS directory  : {config.Ipfs.Directory ?? "(n/a)"}");
         Console.WriteLine($"IPFS gateway    : {config.Ipfs.GatewayUrl ?? "(default)"}");

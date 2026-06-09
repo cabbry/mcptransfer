@@ -92,6 +92,54 @@ public sealed class AnvilIntegrationTests
     }
 
     [Fact]
+    public async Task AgentDirectory_Transfer_MovesHandleAndFreesOldOwner()
+    {
+        if (!_anvil.Enabled) return;
+        var chain = Chain;
+        var oldOwner = AnvilFixture.Identity(7);
+        var newOwner = AnvilFixture.Identity(8);
+        const string handle = "transfer-src";
+
+        await chain.AgentDirectory.ClaimAsync(handle, oldOwner.Secp256k1);
+        await chain.AgentDirectory.TransferAsync(handle, newOwner.Address, oldOwner.Secp256k1);
+
+        var resolved = await chain.AgentDirectory.ResolveAsync(handle);
+        Assert.Equal(newOwner.Address.LowerHex, resolved!.LowerHex);
+        Assert.Equal(handle, await chain.AgentDirectory.ReverseResolveAsync(newOwner.Address));
+        Assert.Null(await chain.AgentDirectory.ReverseResolveAsync(oldOwner.Address));
+    }
+
+    [Fact]
+    public async Task Blocklist_BlockHidesInboxEvents_UnblockRestoresThem()
+    {
+        if (!_anvil.Enabled) return;
+        var chain = Chain;
+        Assert.NotNull(chain.Blocklist); // fixture parsed the deployed address
+        var spammer = AnvilFixture.Identity(3); // already used as a sender elsewhere — fine, sending is permissionless
+        var victim = AnvilFixture.Identity(9);
+        const string cid = "QmSpamCidForBlocklistIntegration0001";
+        var contentHash = SHA256.HashData(new byte[] { 9, 9, 9 });
+
+        await chain.FileRegistry.SendAsync(victim.Address, cid, contentHash, spammer.Secp256k1);
+        var latest = await chain.FileRegistry.GetLatestBlockNumberAsync();
+        var raw = await chain.FileRegistry.GetInboxAsync(victim.Address, 0, latest);
+        Assert.Contains(raw, e => e.Cid == cid);
+
+        // Block → the event disappears from the filtered inbox.
+        await chain.Blocklist!.SetBlockedAsync(spammer.Address, true, victim.Secp256k1);
+        Assert.True(await chain.Blocklist.IsBlockedAsync(victim.Address, spammer.Address));
+        var filtered = await InboxFilter.ApplyAsync(chain.Blocklist, victim.Address, raw);
+        Assert.DoesNotContain(filtered.Kept, e => e.From.LowerHex == spammer.Address.LowerHex);
+        Assert.True(filtered.Hidden >= 1);
+
+        // Unblock → it comes back.
+        await chain.Blocklist.SetBlockedAsync(spammer.Address, false, victim.Secp256k1);
+        var refiltered = await InboxFilter.ApplyAsync(chain.Blocklist, victim.Address, raw);
+        Assert.Contains(refiltered.Kept, e => e.Cid == cid);
+        Assert.Equal(0, refiltered.Hidden);
+    }
+
+    [Fact]
     public async Task FullEnvelope_E2E_ByteIdentical_DualSigned_AndCorroborated()
     {
         if (!_anvil.Enabled) return;

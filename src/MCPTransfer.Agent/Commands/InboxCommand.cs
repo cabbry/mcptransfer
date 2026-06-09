@@ -38,9 +38,17 @@ internal static class InboxCommand
         Console.WriteLine();
 
         IReadOnlyList<MCPTransfer.Core.Chain.FileSentEvent> events;
+        var hiddenCount = 0;
         try
         {
             events = await chain.FileRegistry.GetInboxAsync(identity.Address, fromBlock, latest, ct).ConfigureAwait(false);
+
+            // Drop events from senders on this agent's on-chain blocklist
+            // (no-op when no Blocklist contract is configured).
+            var filtered = await MCPTransfer.Core.Chain.InboxFilter
+                .ApplyAsync(chain.Blocklist, identity.Address, events, ct).ConfigureAwait(false);
+            events = filtered.Kept;
+            hiddenCount = filtered.Hidden;
         }
         catch (Exception ex)
         {
@@ -49,7 +57,9 @@ internal static class InboxCommand
 
         if (events.Count == 0)
         {
-            Console.WriteLine("  (no events)");
+            Console.WriteLine(hiddenCount > 0
+                ? $"  (no events — {hiddenCount} from blocked sender(s) hidden)"
+                : "  (no events)");
             return Common.ExitSuccess;
         }
 
@@ -65,7 +75,9 @@ internal static class InboxCommand
             Console.WriteLine($"      content hash: 0x{Convert.ToHexString(e.ContentHash).ToLowerInvariant()}");
         }
         Console.WriteLine();
-        Console.WriteLine($"  {events.Count} event(s).");
+        Console.WriteLine(hiddenCount > 0
+            ? $"  {events.Count} event(s) ({hiddenCount} from blocked sender(s) hidden)."
+            : $"  {events.Count} event(s).");
         Console.WriteLine("  Decrypt one with:");
         Console.WriteLine("    mcptx receive <cid> --out PATH --expect-hash <content hash>");
         return Common.ExitSuccess;
