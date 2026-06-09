@@ -24,10 +24,12 @@ Override individual config fields at runtime:
 | `MCPTX_FILE_REGISTRY` | `chain.file_registry_address` |
 | `MCPTX_KEY_REGISTRY` | `chain.key_registry_address` |
 | `MCPTX_AGENT_DIRECTORY` | `chain.agent_directory_address` |
+| `MCPTX_BLOCKLIST` | `chain.blocklist_address` (optional; unset = no inbox filtering) |
 | `MCPTX_IPFS_KIND` | `ipfs.kind` (`pinata`, `file`, or `memory`) |
 | `MCPTX_IPFS_DIR` | `ipfs.directory` (shared folder for the `file` backend) |
 | `MCPTX_GATEWAY_URL` | `ipfs.gateway_url` |
 | `PINATA_JWT` | `ipfs.pinata_jwt` |
+| `MCPTX_PASSPHRASE` | not a config field — passphrase for the encrypted (v3) identity file: `keygen` encrypts when set, every load decrypts with it |
 
 Unset variables leave the config file value untouched.
 
@@ -37,12 +39,16 @@ Unset variables leave the config file value untouched.
 
 ### `mcptx keygen [--out PATH] [--force]`
 
-Generate a new hybrid identity (secp256k1 + ML-KEM-768) and write it to
-disk. Refuses to overwrite an existing identity without `--force`.
+Generate a new hybrid identity (secp256k1 + ML-KEM-768 + ML-DSA-65) and
+write it to disk. Refuses to overwrite an existing identity without
+`--force`. If `MCPTX_PASSPHRASE` is set, the file is encrypted at rest
+(Argon2id + AES-256-GCM, format v3 — see docs/CRYPTO.md); otherwise it is
+plaintext JSON (v2).
 
 ```sh
 mcptx keygen
 # Identity written to ~/.mcptx/identity.json
+#   at rest : PLAINTEXT (set MCPTX_PASSPHRASE before keygen to encrypt)
 # Address: 0xabc...
 ```
 
@@ -66,24 +72,43 @@ Print the effective configuration (file overlaid with env-var overrides).
 
 ### `mcptx register-key`
 
-Publish the local secp256k1 + ML-KEM-768 public keys to the on-chain
-`KeyRegistry`. Both keys are required: secp256k1 for ECDH on the sender
-side, ML-KEM-768 for PQC encapsulation. The call is signed by the agent's
-own secp256k1 private key.
+Publish the local keys to the on-chain `KeyRegistry` (v2 flow): the
+secp256k1 pubkey is stored in clear (senders need it for ECDH); the
+ML-KEM-768 pubkey is first pinned to the configured IPFS backend, then its
+keccak256 hash + CID are published as an on-chain commitment. Senders fetch
+the key by CID and verify it against the hash before encapsulating.
 
 ```sh
 mcptx register-key
 # Publishing keys for 0xabc...
-#   secp256k1 sha256:dead... (33 bytes)
-#   mlkem     sha256:beef... (1184 bytes)
-#   tx hash: 0x...
-#   ✓ round-trip verified
+#   secp256k1 sha256:dead...    (33 bytes, stored on-chain)
+#   mlkem     sha256:beef...  (1184 bytes, pinned via file)
+#   mlkem cid : ...
+#   mlkem hash: 0x...
+#   tx hash   : 0x...
+#   ✓ round-trip verified (on-chain entry matches)
 ```
 
 ### `mcptx claim <handle>`
 
 Claim a handle on the `AgentDirectory`. Format: `[a-z0-9-]{3,32}`, no
-leading or trailing hyphen. First-come-first-served, permanent.
+leading or trailing hyphen. First-come-first-served; transferable by the
+owner via `transfer-handle`.
+
+### `mcptx transfer-handle <handle> --to <0xaddress>`
+
+Transfer YOUR handle to a new owner address (e.g. after migrating to a
+fresh keypair). Pre-flight checks ownership for a clean error; the new
+owner must not already have a handle; you are freed and may claim a new
+one. **Warning:** after the transfer the new owner fully controls the
+handle. (Deliberately not exposed as an MCP tool.)
+
+### `mcptx block <handle|0xaddress>` / `mcptx unblock <handle|0xaddress>`
+
+Add/remove a sender on your on-chain `Blocklist`. Blocked senders'
+`FileSent` events are hidden from `mcptx inbox` (advisory: enforcement is
+client-side at read time; reversible). Requires `blocklist_address` in the
+config (the `anvil-local` profile pre-fills it) or `MCPTX_BLOCKLIST`.
 
 ### `mcptx resolve <handle>`
 

@@ -240,10 +240,23 @@ public static class AgentIdentityFile
         var mlkemB64 = RequireString(root, "mlkem_private_key");
         var mldsaB64 = RequireString(root, "mldsa_private_key");
 
-        var ec = Secp256k1KeyPair.FromPrivateKeyHex(ecHex);
-        var mlkem = MlKemKeyPair.FromEncodedPrivateKey(Convert.FromBase64String(mlkemB64));
-        var mldsa = MlDsaKeyPair.FromEncodedPrivateKey(Convert.FromBase64String(mldsaB64));
-        return AgentIdentity.FromKeys(ec, mlkem, mldsa);
+        // The FromEncoded* constructors copy out of these buffers, so the
+        // decode intermediates can be zeroed immediately. (The JSON strings
+        // themselves are immanageable: .NET strings cannot be zeroed.)
+        var mlkemBytes = Convert.FromBase64String(mlkemB64);
+        var mldsaBytes = Convert.FromBase64String(mldsaB64);
+        try
+        {
+            var ec = Secp256k1KeyPair.FromPrivateKeyHex(ecHex);
+            var mlkem = MlKemKeyPair.FromEncodedPrivateKey(mlkemBytes);
+            var mldsa = MlDsaKeyPair.FromEncodedPrivateKey(mldsaBytes);
+            return AgentIdentity.FromKeys(ec, mlkem, mldsa);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(mlkemBytes);
+            CryptographicOperations.ZeroMemory(mldsaBytes);
+        }
     }
 
     // ── v3 encrypted envelope ────────────────────────────────────────────

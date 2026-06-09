@@ -68,12 +68,18 @@ catches the exception and sets `isError`).
 |------|------|-------------|
 | `whoami` | read | This agent's address + key fingerprints |
 | `resolve` | read | Handle → address (or unclaimed) |
-| `whois` | read | Handle/address → address, reverse handle, key registration + fingerprints |
-| `inbox` | read | FileSent events addressed to this agent (optional `since_block`) |
-| `register_key` | **signed** | Publish secp256k1 + ML-KEM-768 pubkeys on chain |
+| `whois` | read | Handle/address → address, reverse handle, key registration (secp fingerprint + ML-KEM hash/CID) |
+| `inbox` | read | FileSent events addressed to this agent (optional `since_block`); senders on the blocklist are filtered out (`blocked_hidden` count) |
+| `register_key` | **signed** | Pin the ML-KEM-768 pubkey to IPFS, then publish secp256k1 + keccak256 commitment + CID on chain |
 | `claim` | **signed** | Claim a handle (first-come-first-served) |
+| `block_sender` | **signed** | Block a sender (handle or 0x) on this agent's on-chain blocklist |
+| `unblock_sender` | **signed** | Reverse a block |
 | `send_file` | **signed** | Encrypt + pin a local file for a recipient, announce on chain |
-| `receive_file` | read | Fetch a CID, verify, decrypt to a local path (atomic) |
+| `receive_file` | read | Fetch a CID, verify, decrypt to a local path (atomic); auto-corroborates against the on-chain FileSent |
+
+(Handle **transfer** is deliberately CLI-only — `mcptx transfer-handle` —
+giving an MCP host the power to permanently hand the agent's name to an
+arbitrary address would be an excessive authority grant.)
 
 `send_file(path, to, mime?)` and `receive_file(cid, outPath)` operate on
 **paths on the server's filesystem** — the natural model for a local MCP
@@ -117,8 +123,8 @@ server — but it means:
 The on-chain trust boundaries documented in
 [docs/CRYPTO.md → Frontières de confiance on-chain](CRYPTO.md) apply equally
 here (a lying RPC can redirect a `send_file`; the recipient's secp256k1 key
-is verified to derive to its address, the ML-KEM key is not independently
-bound — see #1 and #3 there).
+is verified to derive to its address, and since registry v2 the ML-KEM key
+fetched from IPFS is verified against its on-chain keccak256 commitment).
 
 ## Lifecycle & concurrency notes
 
@@ -129,16 +135,22 @@ on shutdown — unlike the one-shot CLI, a long-lived server must not churn
 them per call.
 
 **Concurrent state-changing tools.** All of `register_key` / `claim` /
-`send_file` sign transactions from the same EOA and rely on auto-nonce. If a
-host called two of them concurrently, both would fetch the same pending nonce
-and one tx would be rejected. The server serializes the transaction-submission
-step behind a single signing lock, so concurrent calls queue rather than
-collide. (Read-only tools — `whoami`/`resolve`/`whois`/`inbox` — run freely
-in parallel.)
+`block_sender` / `unblock_sender` / `send_file` sign transactions from the
+same EOA and rely on auto-nonce. If a host called two of them concurrently,
+both would fetch the same pending nonce and one tx would be rejected. The
+server serializes the transaction-submission step behind a single signing
+lock, so concurrent calls queue rather than collide. (Read-only tools —
+`whoami`/`resolve`/`whois`/`inbox` — run freely in parallel.)
+
+**Encrypted identity.** If the identity file is encrypted (v3), set
+`MCPTX_PASSPHRASE` in the server's `env` block; the key material is
+decrypted once at startup. On shutdown the server zeroes the agent's cached
+private-key material (best-effort — see docs/CRYPTO.md, Zeroization).
 
 **Known limitations (accepted for the POC).** Cancellation tokens are passed
 to the tools but the underlying Nethereum RPC calls are not yet abortable
-mid-flight (a hung RPC runs to its HTTP timeout). Private-key material lives
-unzeroed in managed memory. The `inbox` tool caps the `eth_getLogs` span at
+mid-flight (a hung RPC runs to its HTTP timeout). Key zeroization is
+best-effort only (BouncyCastle internals and GC copies are not coverable in
+managed .NET). The `inbox` tool caps the `eth_getLogs` span at
 50 000 blocks (most public RPCs reject wider ranges); page through history
 with `since_block` for older events.

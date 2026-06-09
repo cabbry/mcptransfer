@@ -42,7 +42,7 @@ Target deployment : **Polygon Amoy** (chainId 80002). Local dev :
 
 ---
 
-## Les trois contrats
+## Les quatre contrats
 
 ### FileRegistry
 
@@ -75,36 +75,52 @@ function send(address to, string calldata cid, bytes32 contentHash) external;
 
 **Storage** : zéro. Tout dans les events. Coût d'émission ≈ 30k gas.
 
-### KeyRegistry
+### KeyRegistry (v2 : hash commitment)
 
 [`contracts/src/KeyRegistry.sol`](../contracts/src/KeyRegistry.sol)
 
-**Rôle** : chaque agent publie sa clé publique ML-KEM-768 (FIPS 203) sur
-laquelle les expéditeurs vont encapsuler. Self-service strict — seul
-`msg.sender` peut écrire son entrée.
+**Rôle** : chaque agent publie sa clé secp256k1 compressée **en clair**
+(l'expéditeur en a besoin pour l'ECDH) plus un **engagement** sur sa clé
+ML-KEM-768 : le hash keccak256 de la clé (1184 octets) et un pointeur
+content-addressed (CID) où la clé complète se récupère. Self-service
+strict — seul `msg.sender` peut écrire son entrée.
+
+**Pourquoi un commitment plutôt que la clé complète on-chain (v1)** :
+- le gas de `publish` chute d'un ordre de grandeur (~1.3M → ~150k) ;
+- la chaîne ne porte plus de matériel de clé volumineux ;
+- le canal de distribution devient **non-trusté** : le client de référence
+  épingle la clé sur IPFS, mais n'importe quel canal convient — le lecteur
+  DOIT vérifier `keccak256(cléRécupérée) == mlkemHash` avant d'encapsuler
+  (c'est ce que fait `RecipientResolver`).
 
 **Surface** :
 
 ```solidity
-mapping(address => bytes) private _mlkemPubkey;
-uint256 public constant ML_KEM_768_PUBKEY_LENGTH = 1184;
-uint64  public constant KEY_VERSION = 1;
+uint256 public constant SECP256K1_COMPRESSED_LENGTH = 33;
+uint256 public constant MAX_CID_LENGTH = 128;
+uint64  public constant KEY_VERSION = 2;
 
-event KeyPublished(address indexed who, bytes mlkemPubkey, uint64 version);
+event KeysPublished(address indexed who, bytes secp256k1Pubkey,
+                    bytes32 mlkemHash, string mlkemCid, uint64 version);
 
-function publish(bytes calldata mlkemPubkey) external;  // must be 1184 bytes
-function get(address who) external view returns (bytes memory);
+function publish(bytes calldata secp256k1Pubkey, bytes32 mlkemHash,
+                 string calldata mlkemCid) external;
+function getSecp256k1(address who) external view returns (bytes memory);
+function getMlKem(address who) external view
+    returns (bytes32 mlkemHash, string memory mlkemCid);
 ```
 
-**Coût** : ~190k gas la première fois (storage allocation), ~50k pour
-overwrite. Free sur Amoy.
+Côté C#, `KeyPublication.PublishAsync` fait le flux complet
+(pin IPFS → hash → publish) ; `mcptx register-key` et l'outil MCP
+`register_key` l'utilisent.
 
-### AgentDirectory
+### AgentDirectory (v2 : handles transférables)
 
 [`contracts/src/AgentDirectory.sol`](../contracts/src/AgentDirectory.sol)
 
-**Rôle** : annuaire `alice-ai` → `0xabc…`. First-come-first-served,
-permanent, non-transférable en v1.
+**Rôle** : annuaire `alice-ai` → `0xabc…`. First-come-first-served ;
+depuis la v2 le propriétaire peut **transférer** son handle (migration vers
+une nouvelle keypair, par exemple).
 
 **Format de handle** : `[a-z0-9-]{3,32}` sans hyphen en début ou fin.
 Validation on-chain caractère par caractère.
@@ -116,17 +132,52 @@ mapping(string => address) public handleToAddress;
 mapping(address => string) public addressToHandle;
 
 event HandleClaimed(string indexed handleHash, address indexed owner, string handle);
+event HandleTransferred(string indexed handleHash, address indexed from,
+                        address indexed to, string handle);
 
 function claim(string calldata handle) external;
+function transfer(string calldata handle, address newOwner) external;
 ```
 
 **Invariants** :
-- Un address ne peut claim qu'**un seul** handle (forever)
-- Un handle ne peut être claim qu'**une seule** fois (forever)
+- Un address possède au plus **un** handle à la fois
+- Un handle non-transféré reste lié à son owner ; seul l'owner peut `transfer`
+- `transfer` exige que le nouveau owner n'ait pas déjà de handle ; l'ancien
+  owner est libéré et peut re-claim un autre handle
 - Le handle doit passer `[a-z0-9-]{3,32}` + pas d'hyphen en bord
 
 **Note événement** : `string indexed` produit un topic = `keccak256(handle)`.
 Le handle lisible reste dans les données non-indexées.
+
+CLI : `mcptx transfer-handle <handle> --to 0x…` (volontairement absent de la
+surface MCP — donner ce pouvoir à un host MCP serait excessif).
+
+### Blocklist (v2 : anti-spam advisory)
+
+[`contracts/src/Blocklist.sol`](../contracts/src/Blocklist.sol)
+
+**Rôle** : `FileRegistry.send` est volontairement permissionless, donc
+n'importe qui peut "spammer" la inbox de n'importe qui. La parade est au
+moment de la **lecture** : chaque destinataire enregistre on-chain les
+expéditeurs qu'il ignore, et les clients honnêtes filtrent ces events
+(`InboxFilter` côté C# — un `eth_call isBlocked` par expéditeur distinct).
+
+**État purement advisory** : rien n'empêche on-chain un expéditeur bloqué
+d'émettre des events ; ils ne sont simplement plus affichés. Réversible.
+
+```solidity
+mapping(address => mapping(address => bool)) public isBlocked; // recipient => sender
+
+event BlockSet(address indexed recipient, address indexed sender, bool blocked);
+
+function setBlocked(address sender, bool blocked) external;
+```
+
+CLI : `mcptx block <handle|0x…>` / `mcptx unblock <handle|0x…>` ;
+MCP : outils `block_sender` / `unblock_sender`. `mcptx inbox` et l'outil MCP
+`inbox` affichent le nombre d'events masqués. Adresse optionnelle dans la
+config (`blocklist_address` / `MCPTX_BLOCKLIST`) — sans elle, le filtrage est
+désactivé et block/unblock indisponibles.
 
 ---
 
@@ -280,13 +331,20 @@ Estimés analytiquement (à confirmer avec `forge test --gas-report`) :
 
 ---
 
-## Limites v1
+## Limites v1 → état v2
 
-| Limite | Mitigation v2 |
-|--------|---------------|
-| Handles non-transférables, non-révocables | Ajouter `transfer(string handle, address newOwner)` |
-| Pas de filtrage on-chain par sender (alice peut spammer bob) | Bob filtre client-side ; ajouter `IBlocklist` côté lecteur |
-| Pas de fee → pas de coût pour spam | Soit fee on-chain (mais voir [README — pas de fee](../README.md)) ; soit rate-limiting off-chain |
-| ML-KEM pubkey en clair on-chain → social graph visible | Hashage avant publication + reveal off-chain ; rebrouille en v2 |
+| Limite v1 | État |
+|-----------|------|
+| Handles non-transférables, non-révocables | ✅ **fait** — `AgentDirectory.transfer(handle, newOwner)` + `mcptx transfer-handle` |
+| Pas de filtrage par sender (alice peut spammer bob) | ✅ **fait** — contrat `Blocklist` + filtrage client-side (`InboxFilter`, `mcptx block/unblock`) |
+| ML-KEM pubkey en clair on-chain (1184 B, ~1.3M gas) | ✅ **fait** — KeyRegistry v2 : hash commitment + CID, clé distribuée off-chain et vérifiée à la lecture |
+| Pas de fee → pas de coût pour spam | ⏳ assumé — pas de fee par design ([README — pas de fee](../README.md)) ; le Blocklist mitige côté lecture, rate-limiting off-chain en option pour l'infra hébergée |
+
+Note honnêteté sur le commitment ML-KEM : la clé reste **publiquement
+récupérable** (le client de référence l'épingle sur IPFS public). Le gain
+principal est gas + empreinte chaîne ; le commitment permet aussi une
+distribution privée hors-bande pour qui le souhaite — la chaîne ne voit que
+le hash. Ce n'est PAS une protection du social graph (qui reste visible via
+les events `FileSent`).
 | Pas de batch operations | `multicall(bytes[] calls)` ou batched function |
 | Pas de pagination sur les events `FileSent` | Indexeur off-chain (Goldsky, The Graph, Subsquid) |

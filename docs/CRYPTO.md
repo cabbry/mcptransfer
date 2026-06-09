@@ -17,6 +17,7 @@
 - [Couche 5 — Hashes : Keccak-256](#couche-5--hashes--keccak-256)
 - [Threat model](#threat-model)
 - [Flux complet bout-en-bout](#flux-complet-bout-en-bout)
+- [Stockage des clés : chiffrement at-rest et zeroization](#stockage-des-clés--chiffrement-at-rest-et-zeroization)
 - [Références](#références)
 
 ---
@@ -558,6 +559,54 @@ contract.FileRegistry.send(bob, cid_manifest,        manifest, sig ← IPFS.down
                                                        chunk_i = AES-256-GCM.Decrypt(K, nonce_i, ct_i, tag_i)
                                                      concat → file ✓
 ```
+
+---
+
+## Stockage des clés : chiffrement at-rest et zeroization
+
+### Fichier d'identité chiffré (v3, opt-in)
+
+Par défaut `~/.mcptx/identity.json` est en clair (v2, mode `0600` sur POSIX).
+Si la variable d'environnement **`MCPTX_PASSPHRASE`** est définie au moment
+du `keygen`, le fichier est écrit chiffré (v3) ; la même variable est lue à
+chaque chargement (CLI et serveur MCP).
+
+Construction :
+
+```
+clé_AES   = Argon2id(passphrase, salt 16B aléatoire ; m=19456 KiB, t=2, p=1)   // baseline OWASP, RFC 9106 v1.3
+enveloppe = AES-256-GCM(clé_AES, nonce 12B aléatoire,
+                        plaintext = JSON v2,
+                        aad = "mcptx-identity-v3|argon2id|salt|m|t|p")
+```
+
+Les coûts Argon2 utilisés sont stockés dans l'en-tête du fichier et **liés
+dans l'AAD** : altérer le salt ou les coûts (pour affaiblir le KDF) fait
+échouer l'authentification GCM exactement comme une mauvaise passphrase —
+les deux cas sont indistinguables par design.
+
+Limites : la passphrase transite par une variable d'environnement (visible
+de l'utilisateur courant) ; un keyring OS / TPM reste la cible production.
+
+### Zeroization (best-effort)
+
+`Secp256k1KeyPair`, `MlKemKeyPair`, `MlDsaKeyPair` et `AgentIdentity`
+implémentent `IDisposable` : `Dispose()` met à zéro les encodages de clés
+privées mis en cache. Les buffers intermédiaires (clé AES dérivée, payload
+v2 déchiffré, bytes du fichier, décodages base64, passphrase UTF-8, clé de
+données HKDF côté enveloppe) sont zéroisés après usage.
+
+**Honnêteté sur ce que ça NE couvre PAS** — en .NET managé :
+- BouncyCastle conserve ses propres copies internes (paramètres ML-KEM /
+  ML-DSA, scalaire `BigInteger` secp256k1) qui ne sont pas zéroisables ;
+- le GC peut déplacer/copier les tableaux avant leur mise à zéro ;
+- les `string` .NET (passphrase, hex JSON) sont immuables et non-zéroisables.
+
+C'est donc une **réduction de fenêtre d'exposition**, pas une garantie. Le
+serveur MCP (processus long-vivant) dispose l'identité à l'arrêt ; les
+commandes CLI s'appuient sur la fin du processus. Une garantie forte
+demanderait des buffers natifs épinglés ou un secret-store OS — hors scope
+POC.
 
 ---
 

@@ -16,8 +16,11 @@ namespace MCPTransfer.Core.Crypto;
 /// The public key travels inside the signed manifest (it is not published
 /// on chain), so verifiers learn it from the wrapper; the classical ECDSA
 /// signature — whose key derives to the sender's address — vouches for it.
+/// <para><see cref="Dispose"/> zeroes the cached private-key encoding
+/// (best-effort; BouncyCastle internals cannot be zeroed — see
+/// docs/CRYPTO.md, Zeroization).</para>
 /// </remarks>
-public sealed class MlDsaKeyPair
+public sealed class MlDsaKeyPair : IDisposable
 {
     /// <summary>FIPS 204 ML-DSA-65 public key length, in bytes.</summary>
     public const int PublicKeyByteLength = 1952;
@@ -62,6 +65,16 @@ public sealed class MlDsaKeyPair
 
     public ReadOnlySpan<byte> PublicKeyEncoded
         => _publicEncoded ??= _publicParameters.GetEncoded();
+
+    /// <summary>Zero the cached private-key encoding (best-effort).</summary>
+    public void Dispose()
+    {
+        if (_privateEncoded is not null)
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(_privateEncoded);
+            _privateEncoded = null;
+        }
+    }
 
     /// <summary>Sign <paramref name="message"/> and return the 3309-byte ML-DSA-65 signature.</summary>
     public byte[] Sign(ReadOnlySpan<byte> message)

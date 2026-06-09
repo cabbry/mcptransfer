@@ -25,6 +25,8 @@ real IPFS (a Pinata JWT). See [What's left](#whats-left).
 | 5 — Hybrid signatures (ECDSA secp256k1 + ML-DSA-65) | done |
 | Hardening — input/parse robustness, MCP path confinement + signing lock | done |
 | Tooling — `mcptx version`, on-chain receive corroboration, CI, gated anvil integration tests | done |
+| Contracts v2 — transferable handles, Blocklist (anti-spam), KeyRegistry hash commitment | done |
+| Hardening 2 — encrypted identity at rest (Argon2id + AES-GCM), best-effort key zeroization | done |
 
 **Verified:** 289 .NET tests pass (the 4 gated integration tests no-op unless
 enabled) + 33 Solidity tests under `forge`; the full envelope round-trip is
@@ -160,22 +162,25 @@ Plaintext JSON at `~/.mcptx/identity.json` (see
 }
 ```
 
-> **POC limitation:** private keys are stored unencrypted (file mode `0600` on
-> POSIX). Production should wrap the file in a passphrase-derived key or hand
-> off to an OS keyring / TPM. v1 identity files (pre-ML-DSA) are not loadable —
-> regenerate with `mcptx keygen --force`.
+> **Encryption at rest (opt-in):** set `MCPTX_PASSPHRASE` before `keygen` and
+> the file is written encrypted (v3: Argon2id → AES-256-GCM, KDF header bound
+> as AAD); the same variable decrypts it on every load (CLI + MCP server).
+> Without it the file is plaintext (`0600` on POSIX). An OS keyring / TPM
+> remains the production target. v1 identity files (pre-ML-DSA) are not
+> loadable — regenerate with `mcptx keygen --force`.
 
 ---
 
 ## MCP server
 
 `mcptx mcp-serve` runs a [Model Context Protocol](https://modelcontextprotocol.io)
-server over stdio, exposing MCPTransfer as 8 tools (`whoami`, `resolve`,
-`whois`, `inbox`, `register_key`, `claim`, `send_file`, `receive_file`) so an
-AI host can drive the whole protocol — *"send this report to alice-ai"* →
-on-chain handle resolution + hybrid-PQC encryption + IPFS pin + chain event.
-`receive_file` auto-corroborates the CID against the on-chain record and
-reports the resolved sender handle.
+server over stdio, exposing MCPTransfer as 10 tools (`whoami`, `resolve`,
+`whois`, `inbox`, `register_key`, `claim`, `block_sender`, `unblock_sender`,
+`send_file`, `receive_file`) so an AI host can drive the whole protocol —
+*"send this report to alice-ai"* → on-chain handle resolution + hybrid-PQC
+encryption + IPFS pin + chain event. `receive_file` auto-corroborates the CID
+against the on-chain record; `inbox` filters senders on the agent's on-chain
+blocklist.
 
 ```json
 {
@@ -195,11 +200,16 @@ reports the resolved sender handle.
 
 ## On-chain layer
 
-Three immutable contracts on Polygon Amoy (or Anvil locally):
+Four immutable contracts on Polygon Amoy (or Anvil locally):
 
 - **FileRegistry** — emits `FileSent(from, to, cid, contentHash, ts)`
-- **KeyRegistry** — `mapping(address => bytes)` for **both** secp256k1 compressed and ML-KEM-768 public keys
-- **AgentDirectory** — first-come-first-served `handle ↔ address` registry (`alice-ai` style)
+- **KeyRegistry** — secp256k1 pubkey in clear + a **keccak256 commitment** to
+  the ML-KEM-768 pubkey (full key pinned to IPFS, verified against the hash
+  by every sender — the distribution channel is untrusted)
+- **AgentDirectory** — first-come-first-served `handle ↔ address` registry
+  (`alice-ai` style); handles are transferable by their owner
+- **Blocklist** — per-recipient sender blocklist, enforced client-side at
+  inbox-read time (anti-spam, reversible)
 
 C# wrappers in `MCPTransfer.Core.Chain` (Nethereum-backed):
 
@@ -256,14 +266,15 @@ needs your own accounts or belongs to a productization phase (v2):
   POL faucet + RPC + Polygonscan key), pin to real IPFS (Pinata JWT), and run a
   live Amoy + Pinata round-trip. The handles and addresses then go into the
   `amoy` config profile.
-- **Productization (v2)** — a hosted relay/gateway and an agent-discovery story
-  (so AI agents find and adopt the service), plus the contract & privacy
-  follow-ups documented in [docs/CHAIN.md](docs/CHAIN.md) → *Limites v1*
-  (transferable handles, blocklist/anti-spam, hashing ML-KEM pubkeys to hide
-  the social graph).
-- **Hardening** — encrypt the identity file at rest; in-memory key zeroization;
-  mid-flight cancellation of Nethereum RPC calls (a [documented](docs/MCP.md)
-  Nethereum API limitation today).
+- **Productization** — a hosted relay/gateway and an agent-discovery story
+  (so AI agents find and adopt the service). The v1-contract follow-ups
+  (transferable handles, blocklist, ML-KEM hash commitment) are **done** —
+  see [docs/CHAIN.md](docs/CHAIN.md) → *Limites v1 → état v2*.
+- **Hardening beyond POC scope** — OS keyring / TPM for the identity key
+  (current: opt-in Argon2id+AES-GCM file encryption); strong zeroization
+  (current: best-effort, see [docs/CRYPTO.md](docs/CRYPTO.md) → *Zeroization*);
+  mid-flight cancellation of Nethereum RPC calls (a
+  [documented](docs/MCP.md) Nethereum API limitation today).
 
 ## Known limits (POC scope)
 

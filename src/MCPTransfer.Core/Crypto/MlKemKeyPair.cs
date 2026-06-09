@@ -7,10 +7,17 @@ namespace MCPTransfer.Core.Crypto;
 
 /// <summary>
 /// ML-KEM-768 keypair: the post-quantum half of the agent identity. The
-/// public key is published via the on-chain <c>KeyRegistry</c>; the private
-/// key stays local and is used to decapsulate incoming KEM ciphertexts.
+/// public key is committed to via the on-chain <c>KeyRegistry</c>; the
+/// private key stays local and is used to decapsulate incoming KEM
+/// ciphertexts.
 /// </summary>
-public sealed class MlKemKeyPair
+/// <remarks>
+/// <see cref="Dispose"/> zeroes the cached private-key encoding. This is
+/// best-effort only: BouncyCastle's parameter objects hold their own
+/// internal copies that cannot be zeroed, and the GC may have moved the
+/// arrays before they are cleared (see docs/CRYPTO.md, Zeroization).
+/// </remarks>
+public sealed class MlKemKeyPair : IDisposable
 {
     /// <summary>FIPS 203 full encoding of the private key (k=3 / ML-KEM-768).</summary>
     public const int PrivateKeyEncodedByteLength = 2400;
@@ -52,6 +59,16 @@ public sealed class MlKemKeyPair
 
     public ReadOnlySpan<byte> PrivateKeyEncoded
         => _privateEncoded ??= _privateParameters.GetEncoded();
+
+    /// <summary>Zero the cached private-key encoding (best-effort).</summary>
+    public void Dispose()
+    {
+        if (_privateEncoded is not null)
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(_privateEncoded);
+            _privateEncoded = null;
+        }
+    }
 
     /// <summary>
     /// Recovers the 32-byte shared secret from a KEM ciphertext produced by

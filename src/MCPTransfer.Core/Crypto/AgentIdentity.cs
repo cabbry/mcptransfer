@@ -8,8 +8,12 @@ namespace MCPTransfer.Core.Crypto;
 /// <item>an ML-KEM-768 keypair — the PQC half of the hybrid KEM;</item>
 /// <item>an ML-DSA-65 keypair — the PQC half of the hybrid manifest signature.</item>
 /// </list>
+/// <see cref="Dispose"/> zeroes the keypairs' cached private-key material
+/// (best-effort; see docs/CRYPTO.md, Zeroization). Long-lived holders (the
+/// MCP server context) dispose on shutdown; short-lived CLI processes rely
+/// on process exit.
 /// </summary>
-public sealed class AgentIdentity
+public sealed class AgentIdentity : IDisposable
 {
     public Secp256k1KeyPair Secp256k1 { get; }
     public MlKemKeyPair MlKem { get; }
@@ -41,4 +45,12 @@ public sealed class AgentIdentity
     /// </summary>
     public AgentPublicIdentity ToPublic()
         => new(Secp256k1.PublicKeyCompressed.ToArray(), MlKem.PublicKey);
+
+    /// <summary>Zero all cached private-key material (best-effort).</summary>
+    public void Dispose()
+    {
+        Secp256k1.Dispose();
+        MlKem.Dispose();
+        MlDsa.Dispose();
+    }
 }

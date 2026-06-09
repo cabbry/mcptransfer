@@ -23,8 +23,12 @@ namespace MCPTransfer.Core.Crypto;
 /// normalization, and the recovery byte for free. Pubkey recovery from
 /// a signature (<see cref="Recover"/>) is also delegated. Key generation
 /// and ECDH stay on BouncyCastle.
+/// <para><see cref="Dispose"/> zeroes the cached private-key bytes
+/// (best-effort: the BouncyCastle <c>BigInteger</c> scalar and any
+/// Nethereum-internal copies made during signing cannot be zeroed — see
+/// docs/CRYPTO.md, Zeroization).</para>
 /// </remarks>
-public sealed class Secp256k1KeyPair
+public sealed class Secp256k1KeyPair : IDisposable
 {
     public const int PrivateKeyByteLength = 32;
     public const int PublicKeyCompressedByteLength = 33;
@@ -94,6 +98,16 @@ public sealed class Secp256k1KeyPair
 
     public ReadOnlySpan<byte> PrivateKey
         => _privateKeyBytes ??= BigIntegers.AsUnsignedByteArray(PrivateKeyByteLength, _privateScalar);
+
+    /// <summary>Zero the cached private-key bytes (best-effort).</summary>
+    public void Dispose()
+    {
+        if (_privateKeyBytes is not null)
+        {
+            System.Security.Cryptography.CryptographicOperations.ZeroMemory(_privateKeyBytes);
+            _privateKeyBytes = null;
+        }
+    }
 
     public ReadOnlySpan<byte> PublicKeyCompressed
         => _publicKeyCompressed ??= _publicPoint.GetEncoded(compressed: true);

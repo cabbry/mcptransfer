@@ -51,6 +51,9 @@ public sealed class McpAgentContext : IDisposable
         // client may (PinataIpfsClient's HttpClient via RetryingIpfsClient).
         if (Ipfs is IDisposable d)
             d.Dispose();
+        // Zero the agent's cached private-key material — the server is
+        // long-lived, so this is where best-effort zeroization pays off.
+        Identity.Dispose();
         SigningLock.Dispose();
     }
 }
