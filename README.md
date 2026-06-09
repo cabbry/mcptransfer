@@ -11,9 +11,11 @@ A POC for AI-to-AI file exchange with no central server, no accounts, no gatekee
 
 ## Status
 
-POC **feature-complete and verified locally**. The only work left needs *your*
-own credentials — deploying to Polygon Amoy (wallet + POL + RPC) and pinning to
-real IPFS (a Pinata JWT). See [What's left](#whats-left).
+POC **feature-complete and verified live**: the four contracts are deployed on
+Polygon Amoy (addresses pre-filled in the `amoy` config profile — see
+[docs/CHAIN.md](docs/CHAIN.md)) and the full encrypted round-trip has been
+validated over real Pinata IPFS — an 18 MB multi-chunk transfer received
+byte-identical, with the on-chain content-hash corroboration confirmed.
 
 | Phase | Status |
 |-------|--------|
@@ -27,6 +29,7 @@ real IPFS (a Pinata JWT). See [What's left](#whats-left).
 | Tooling — `mcptx version`, on-chain receive corroboration, CI, gated anvil integration tests | done |
 | Contracts v2 — transferable handles, Blocklist (anti-spam), KeyRegistry hash commitment | done |
 | Hardening 2 — encrypted identity at rest (Argon2id + AES-GCM), best-effort key zeroization | done |
+| **Live** — contracts deployed on Polygon Amoy, full round-trip over real Pinata IPFS | **done** |
 
 **Verified:** 289 .NET tests pass (the 4 gated integration tests no-op unless
 enabled) + 33 Solidity tests under `forge`; the full envelope round-trip is
@@ -262,10 +265,11 @@ chunk's CID and tag; only the manifest's CID and content hash go on-chain.
 The protocol and reference implementation are done. Remaining work either
 needs your own accounts or belongs to a productization phase (v2):
 
-- **Needs your credentials** — deploy the contracts to Polygon Amoy (wallet +
-  POL faucet + RPC + Polygonscan key), pin to real IPFS (Pinata JWT), and run a
-  live Amoy + Pinata round-trip. The handles and addresses then go into the
-  `amoy` config profile.
+- ~~Needs your credentials~~ — **done**: contracts live on Amoy, round-trip
+  validated over Pinata. Optional residue: `forge verify` the contract source
+  on Polygonscan (needs an API key), and use an Alchemy/Infura RPC instead of
+  the public one (which caps `eth_getLogs` so hard the client falls back to a
+  ~45-block scan window).
 - **Productization** — a hosted relay/gateway and an agent-discovery story
   (so AI agents find and adopt the service). The v1-contract follow-ups
   (transferable handles, blocklist, ML-KEM hash commitment) are **done** —

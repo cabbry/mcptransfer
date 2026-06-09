@@ -291,8 +291,28 @@ désactivée (les tests no-op) plutôt que de faire échouer le run.
 
 ### Polygon Amoy
 
-Pré-requis :
-- Wallet avec POL (faucet : <https://faucet.polygon.technology/>)
+**Déploiement canonique du POC (2026-06-10)** — pré-rempli par
+`mcptx config init --profile amoy` :
+
+| Contrat | Adresse Amoy |
+|---------|--------------|
+| FileRegistry | [`0x04d02596F41b620857603240d822309847A07261`](https://amoy.polygonscan.com/address/0x04d02596F41b620857603240d822309847A07261) |
+| KeyRegistry | [`0x00e92639C38666b2FA0f9f3367cD6C6E746cB597`](https://amoy.polygonscan.com/address/0x00e92639C38666b2FA0f9f3367cD6C6E746cB597) |
+| AgentDirectory | [`0x86fb0B991dBaA25Dc54b95F2f6a81742b0c0Ca67`](https://amoy.polygonscan.com/address/0x86fb0B991dBaA25Dc54b95F2f6a81742b0c0Ca67) |
+| Blocklist | [`0x67df7EF83c6F5c87AD6DfD816437C76a11578CE7`](https://amoy.polygonscan.com/address/0x67df7EF83c6F5c87AD6DfD816437C76a11578CE7) |
+
+Round-trip live validé le jour du déploiement : fichier de 18 Mo chiffré en
+2 chunks épinglés sur Pinata, annoncé via `FileSent`, reçu et déchiffré
+byte-identique par le destinataire (`alice-live` → `bob-live`).
+
+⚠️ Le RPC public `rpc-amoy.polygon.technology` cape sévèrement
+`eth_getLogs` ; le client retombe automatiquement sur une fenêtre étroite,
+et `--since BLOCK` reste la valeur sûre pour l'historique. Un endpoint
+Alchemy/Infura gratuit lève la contrainte.
+
+Pour déployer votre propre instance — pré-requis :
+- Wallet avec POL (faucet : <https://faucet.polygon.technology/> ou
+  <https://faucets.chain.link/polygon-amoy>)
 - RPC endpoint (Alchemy / Infura / public)
 - Polygonscan API key (pour `--verify`)
 

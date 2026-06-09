@@ -132,11 +132,15 @@ public class MCPTransferConfigFileTests
     }
 
     [Fact]
-    public void DefaultProfiles_Amoy_HasEmptyAddresses()
+    public void DefaultProfiles_Amoy_ShipsCanonicalDeployment()
     {
         var p = DefaultProfiles.Amoy();
         Assert.Equal(80002, p.Chain.ChainId);
-        Assert.Equal(string.Empty, p.Chain.FileRegistryAddress);
+        // The POC's canonical Amoy deployment (2026-06-10); all four present
+        // and parseable.
+        Assert.Equal("0x04d02596F41b620857603240d822309847A07261", p.Chain.FileRegistryAddress);
+        var core = p.Chain.ToCoreConfig();
+        Assert.NotNull(core.BlocklistAddress);
         Assert.Equal("pinata", p.Ipfs.Kind);
     }
 
@@ -208,8 +212,9 @@ public class MCPTransferConfigFileTests
     [Fact]
     public void ToCoreConfig_ThrowsFriendlyOnEmptyAddresses()
     {
-        var amoy = DefaultProfiles.Amoy(); // ships empty addresses
-        var ex = Assert.Throws<InvalidOperationException>(() => amoy.Chain.ToCoreConfig());
+        var cfg = DefaultProfiles.Amoy();
+        var emptied = cfg with { Chain = cfg.Chain with { FileRegistryAddress = string.Empty } };
+        var ex = Assert.Throws<InvalidOperationException>(() => emptied.Chain.ToCoreConfig());
         Assert.Contains("not configured", ex.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("FileRegistryAddress", ex.Message, StringComparison.Ordinal);
     }

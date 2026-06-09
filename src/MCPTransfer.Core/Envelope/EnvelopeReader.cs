@@ -49,7 +49,7 @@ public sealed class EnvelopeReader
         string manifestCid,
         AgentIdentity recipient,
         Stream output,
-        ReadOnlyMemory<byte>? expectedContentHash = null,
+        byte[]? expectedContentHash = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(manifestCid);
@@ -67,10 +67,14 @@ public sealed class EnvelopeReader
         // BEFORE doing any work. This ties the delivered bytes to the on-chain
         // record and defeats a substituted (but otherwise validly-signed)
         // manifest served at the same CID by a non-content-addressed backend.
-        if (expectedContentHash is { } expected)
+        // The parameter is deliberately byte[]? (NOT ReadOnlyMemory<byte>?):
+        // the implicit byte[]→ReadOnlyMemory conversion turns a null array
+        // into an EMPTY memory with HasValue=true, which silently converted
+        // "no hash to check" into "check against an empty hash" at call sites.
+        if (expectedContentHash is not null)
         {
-            if (expected.Length != Hashes.Keccak256ByteLength
-                || !CryptographicOperations.FixedTimeEquals(signed.ContentHash(), expected.Span))
+            if (expectedContentHash.Length != Hashes.Keccak256ByteLength
+                || !CryptographicOperations.FixedTimeEquals(signed.ContentHash(), expectedContentHash))
             {
                 throw new InvalidOperationException(
                     "Manifest content hash does not match the expected (on-chain) content hash. "
@@ -164,7 +168,7 @@ public sealed class EnvelopeReader
         string manifestCid,
         AgentIdentity recipient,
         string outputPath,
-        ReadOnlyMemory<byte>? expectedContentHash = null,
+        byte[]? expectedContentHash = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(outputPath);

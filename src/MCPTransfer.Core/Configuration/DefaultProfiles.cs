@@ -43,8 +43,10 @@ public static class DefaultProfiles
     }
 
     /// <summary>
-    /// Polygon Amoy testnet profile. Contract addresses left as empty placeholders;
-    /// the operator must fill them in after deploying to Amoy.
+    /// Polygon Amoy testnet profile, pre-filled with the POC's canonical
+    /// deployment (2026-06-10, deployer 0xaCaBad786fC38F29A22998C5B9A78887119ED2bD).
+    /// Operators running their own deployment overwrite these in the config
+    /// file or via the MCPTX_* env vars.
     /// </summary>
     public static MCPTransferConfig Amoy(string? pinataJwt = null) => new()
     {
@@ -52,10 +54,10 @@ public static class DefaultProfiles
         {
             RpcUrl = "https://rpc-amoy.polygon.technology",
             ChainId = ChainConfig.AmoyChainId,
-            FileRegistryAddress = string.Empty,
-            KeyRegistryAddress = string.Empty,
-            AgentDirectoryAddress = string.Empty,
-            BlocklistAddress = string.Empty,
+            FileRegistryAddress = "0x04d02596F41b620857603240d822309847A07261",
+            KeyRegistryAddress = "0x00e92639C38666b2FA0f9f3367cD6C6E746cB597",
+            AgentDirectoryAddress = "0x86fb0B991dBaA25Dc54b95F2f6a81742b0c0Ca67",
+            BlocklistAddress = "0x67df7EF83c6F5c87AD6DfD816437C76a11578CE7",
         },
         Ipfs = new IpfsConfigSection
         {

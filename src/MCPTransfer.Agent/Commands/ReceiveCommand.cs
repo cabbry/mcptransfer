@@ -1,3 +1,4 @@
+using MCPTransfer.Core.Chain;
 using MCPTransfer.Core.Crypto;
 using MCPTransfer.Core.Envelope;
 
@@ -68,8 +69,9 @@ internal static class ReceiveCommand
                     ? s
                     : (latest > DefaultCorroborationLookback ? latest - DefaultCorroborationLookback : 0UL);
 
+                // Falls back to a ~450-block scan when the RPC caps eth_getLogs.
                 var ev = await chain.FileRegistry
-                    .FindByCidAsync(identity.Address, cid, fromBlock, latest, ct).ConfigureAwait(false);
+                    .FindByCidWithFallbackAsync(identity.Address, cid, fromBlock, latest, ct).ConfigureAwait(false);
                 if (ev is not null)
                 {
                     expectedHash = ev.ContentHash;

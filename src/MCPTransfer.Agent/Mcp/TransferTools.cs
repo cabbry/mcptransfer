@@ -134,9 +134,12 @@ public static class TransferTools
                 + $"{maxSpan}-block limit most RPC providers enforce on eth_getLogs. Raise since_block "
                 + "(e.g. to a recent block) or page through history in windows.");
 
-        var raw = await ctx.Chain.FileRegistry
-            .GetInboxAsync(ctx.Identity.Address, fromBlock, latest, cancellationToken)
+        // Falls back to a ~450-block window when the RPC caps eth_getLogs.
+        var scan = await ctx.Chain.FileRegistry
+            .GetInboxWithFallbackAsync(ctx.Identity.Address, fromBlock, latest, cancellationToken)
             .ConfigureAwait(false);
+        fromBlock = scan.FromBlock;
+        var raw = scan.Events;
 
         // Drop events from senders on this agent's on-chain blocklist
         // (no-op when no Blocklist contract is configured).
@@ -263,21 +266,33 @@ public static class TransferTools
 
         // Auto-corroborate against the on-chain FileSent event when no explicit
         // hash was given: pin the expected content hash and learn the sender.
+        // Best-effort — an unreachable/capped RPC degrades to signature-only
+        // verification (onchain_corroborated=false) instead of failing the tool.
         string? corroboratedHandle = null;
         var corroborated = false;
         if (expectedHash is null)
         {
-            const ulong lookback = 50_000;
-            var latest = await ctx.Chain.FileRegistry.GetLatestBlockNumberAsync(cancellationToken).ConfigureAwait(false);
-            var fromBlock = latest > lookback ? latest - lookback : 0UL;
-            var ev = await ctx.Chain.FileRegistry
-                .FindByCidAsync(ctx.Identity.Address, cid, fromBlock, latest, cancellationToken).ConfigureAwait(false);
-            if (ev is not null)
+            try
             {
-                expectedHash = ev.ContentHash;
-                corroborated = true;
-                corroboratedHandle = await ctx.Chain.AgentDirectory
-                    .ReverseResolveAsync(ev.From, cancellationToken).ConfigureAwait(false);
+                var latest = await ctx.Chain.FileRegistry.GetLatestBlockNumberAsync(cancellationToken).ConfigureAwait(false);
+                var fromBlock = latest > FileRegistryQueries.DefaultLookback
+                    ? latest - FileRegistryQueries.DefaultLookback
+                    : 0UL;
+                // Falls back to a ~450-block scan when the RPC caps eth_getLogs.
+                var ev = await ctx.Chain.FileRegistry
+                    .FindByCidWithFallbackAsync(ctx.Identity.Address, cid, fromBlock, latest, cancellationToken)
+                    .ConfigureAwait(false);
+                if (ev is not null)
+                {
+                    expectedHash = ev.ContentHash;
+                    corroborated = true;
+                    corroboratedHandle = await ctx.Chain.AgentDirectory
+                        .ReverseResolveAsync(ev.From, cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Proceed on the manifest signature alone.
             }
         }
 

@@ -41,7 +41,19 @@ internal static class InboxCommand
         var hiddenCount = 0;
         try
         {
-            events = await chain.FileRegistry.GetInboxAsync(identity.Address, fromBlock, latest, ct).ConfigureAwait(false);
+            // Falls back to a ~450-block window when the RPC caps eth_getLogs
+            // (public Amoy endpoints reject even the default 10 000).
+            var scan = await MCPTransfer.Core.Chain.FileRegistryQueries
+                .GetInboxWithFallbackAsync(chain.FileRegistry, identity.Address, fromBlock, latest, ct)
+                .ConfigureAwait(false);
+            if (scan.FromBlock != fromBlock)
+            {
+                Console.Error.WriteLine(
+                    $"  note: the RPC rejected the {latest - fromBlock}-block scan; "
+                    + $"narrowed to blocks {scan.FromBlock}..{latest}. Use --since for older events.");
+                fromBlock = scan.FromBlock;
+            }
+            events = scan.Events;
 
             // Drop events from senders on this agent's on-chain blocklist
             // (no-op when no Blocklist contract is configured).
