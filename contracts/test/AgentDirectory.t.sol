@@ -9,8 +9,15 @@ contract AgentDirectoryTest is Test {
 
     address private alice = makeAddr("alice");
     address private bob = makeAddr("bob");
+    address private carol = makeAddr("carol");
 
     event HandleClaimed(string indexed handleHash, address indexed owner, string handle);
+    event HandleTransferred(
+        string indexed handleHash,
+        address indexed from,
+        address indexed to,
+        string handle
+    );
 
     function setUp() public {
         dir = new AgentDirectory();
@@ -156,5 +163,99 @@ contract AgentDirectoryTest is Test {
 
     function test_read_unknown_address_returns_empty_string() public view {
         assertEq(dir.addressToHandle(alice), "");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // transfer (v2)
+    // ─────────────────────────────────────────────────────────────────────
+
+    function test_transfer_moves_handle_and_frees_old_owner() public {
+        vm.prank(alice);
+        dir.claim("alice-ai");
+
+        vm.prank(alice);
+        dir.transfer("alice-ai", bob);
+
+        assertEq(dir.handleToAddress("alice-ai"), bob);
+        assertEq(dir.addressToHandle(bob), "alice-ai");
+        assertEq(dir.addressToHandle(alice), "", "old owner must be freed");
+    }
+
+    function test_transfer_emits_event() public {
+        vm.prank(alice);
+        dir.claim("alice-ai");
+
+        vm.expectEmit(true, true, true, true);
+        emit HandleTransferred("alice-ai", alice, bob, "alice-ai");
+
+        vm.prank(alice);
+        dir.transfer("alice-ai", bob);
+    }
+
+    function test_old_owner_can_claim_again_after_transfer() public {
+        vm.prank(alice);
+        dir.claim("alice-ai");
+        vm.prank(alice);
+        dir.transfer("alice-ai", bob);
+
+        vm.prank(alice);
+        dir.claim("alice-v2");
+        assertEq(dir.handleToAddress("alice-v2"), alice);
+    }
+
+    function test_new_owner_can_transfer_onward() public {
+        vm.prank(alice);
+        dir.claim("alice-ai");
+        vm.prank(alice);
+        dir.transfer("alice-ai", bob);
+
+        vm.prank(bob);
+        dir.transfer("alice-ai", carol);
+        assertEq(dir.handleToAddress("alice-ai"), carol);
+        assertEq(dir.addressToHandle(carol), "alice-ai");
+    }
+
+    function test_transfer_reverts_when_caller_not_owner() public {
+        vm.prank(alice);
+        dir.claim("alice-ai");
+
+        vm.expectRevert(bytes("AgentDirectory: not handle owner"));
+        vm.prank(bob);
+        dir.transfer("alice-ai", carol);
+    }
+
+    function test_transfer_reverts_on_unclaimed_handle() public {
+        vm.expectRevert(bytes("AgentDirectory: not handle owner"));
+        vm.prank(alice);
+        dir.transfer("nobody", bob);
+    }
+
+    function test_transfer_reverts_on_zero_new_owner() public {
+        vm.prank(alice);
+        dir.claim("alice-ai");
+
+        vm.expectRevert(bytes("AgentDirectory: zero new owner"));
+        vm.prank(alice);
+        dir.transfer("alice-ai", address(0));
+    }
+
+    function test_transfer_reverts_on_self_transfer() public {
+        vm.prank(alice);
+        dir.claim("alice-ai");
+
+        vm.expectRevert(bytes("AgentDirectory: transfer to self"));
+        vm.prank(alice);
+        dir.transfer("alice-ai", alice);
+    }
+
+    function test_transfer_reverts_when_new_owner_has_handle() public {
+        vm.prank(alice);
+        dir.claim("alice-ai");
+        vm.prank(bob);
+        dir.claim("bob-ai");
+
+        vm.expectRevert(bytes("AgentDirectory: new owner already has a handle"));
+        vm.prank(alice);
+        dir.transfer("alice-ai", bob);
     }
 }

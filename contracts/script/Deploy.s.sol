@@ -5,9 +5,10 @@ import {Script, console2} from "forge-std/Script.sol";
 import {FileRegistry} from "../src/FileRegistry.sol";
 import {KeyRegistry} from "../src/KeyRegistry.sol";
 import {AgentDirectory} from "../src/AgentDirectory.sol";
+import {Blocklist} from "../src/Blocklist.sol";
 
 /// @title  Deploy
-/// @notice Deploys the three MCPTransfer contracts to the active chain.
+/// @notice Deploys the four MCPTransfer contracts to the active chain.
 ///         Targets:
 ///           - anvil local: `forge script script/Deploy.s.sol --rpc-url anvil
 ///             --private-key 0xac... --broadcast`
@@ -19,9 +20,12 @@ contract Deploy is Script {
     function run() external {
         vm.startBroadcast();
 
+        // Order matters: addresses are nonce-derived, so Blocklist is appended
+        // LAST to keep the first three deterministic anvil addresses stable.
         FileRegistry fileRegistry = new FileRegistry();
         KeyRegistry keyRegistry = new KeyRegistry();
         AgentDirectory agentDirectory = new AgentDirectory();
+        Blocklist blocklist = new Blocklist();
 
         vm.stopBroadcast();
 
@@ -31,6 +35,7 @@ contract Deploy is Script {
         console2.log("FileRegistry    :", address(fileRegistry));
         console2.log("KeyRegistry     :", address(keyRegistry));
         console2.log("AgentDirectory  :", address(agentDirectory));
+        console2.log("Blocklist       :", address(blocklist));
         console2.log("==========================================================");
     }
 }

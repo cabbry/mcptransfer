@@ -6,9 +6,9 @@ pragma solidity ^0.8.27;
 ///         like `alice-ai`, `gpt5-instance-42` — lowercase alphanumeric with
 ///         optional internal hyphens. Resolves both ways so a CLI can show
 ///         `0x… (alice-ai)` and a sender can address by handle.
-/// @dev    Permanent, non-transferable in v1: once claimed, the handle is
-///         bound to the address forever, and the address can never claim a
-///         second handle. No admin, no fee, no upgradeability.
+/// @dev    v2: handles are transferable by their owner (see {transfer}); an
+///         address still owns at most one handle at a time. No admin, no fee,
+///         no upgradeability, no revocation by third parties.
 contract AgentDirectory {
     /// @notice Emitted when an address successfully claims a handle.
     /// @param handleHash The keccak256 hash of the handle string — indexed so
@@ -17,6 +17,18 @@ contract AgentDirectory {
     /// @param owner      The claiming address (msg.sender).
     /// @param handle     The original handle string (non-indexed, readable).
     event HandleClaimed(string indexed handleHash, address indexed owner, string handle);
+
+    /// @notice Emitted when a handle changes owner via {transfer}.
+    /// @param handleHash keccak256 of the handle string (indexed, filterable).
+    /// @param from       Previous owner (msg.sender of the transfer).
+    /// @param to         New owner.
+    /// @param handle     The handle string (non-indexed, readable).
+    event HandleTransferred(
+        string indexed handleHash,
+        address indexed from,
+        address indexed to,
+        string handle
+    );
 
     /// @notice handle → owner address. Zero address means unclaimed.
     mapping(string => address) public handleToAddress;
@@ -50,6 +62,31 @@ contract AgentDirectory {
         addressToHandle[msg.sender] = handle;
 
         emit HandleClaimed(handle, msg.sender, handle);
+    }
+
+    /// @notice Transfer `handle` from msg.sender to `newOwner` (e.g. an agent
+    ///         migrating to a fresh keypair). The handle keeps its name; the
+    ///         previous owner is freed and may later claim a different handle.
+    /// @dev    `newOwner` must not already own a handle (1:1 invariant). The
+    ///         handle argument is required (not derived from msg.sender) so a
+    ///         transfer is always explicit about WHAT is being given away.
+    function transfer(string calldata handle, address newOwner) external {
+        require(
+            handleToAddress[handle] == msg.sender,
+            "AgentDirectory: not handle owner"
+        );
+        require(newOwner != address(0), "AgentDirectory: zero new owner");
+        require(newOwner != msg.sender, "AgentDirectory: transfer to self");
+        require(
+            bytes(addressToHandle[newOwner]).length == 0,
+            "AgentDirectory: new owner already has a handle"
+        );
+
+        handleToAddress[handle] = newOwner;
+        delete addressToHandle[msg.sender];
+        addressToHandle[newOwner] = handle;
+
+        emit HandleTransferred(handle, msg.sender, newOwner, handle);
     }
 
     /// @dev Reverts if `h` does not satisfy [a-z0-9-]{3,32} with no leading
