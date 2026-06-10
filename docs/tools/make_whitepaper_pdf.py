@@ -1,11 +1,12 @@
-"""Render docs/WHITEPAPER.md to a professional PDF (reportlab).
+"""Render the white paper markdown to professional PDFs (reportlab).
 
 Parses the deliberately-regular markdown subset used by the white paper:
 title block, ## / ### headings, paragraphs, - bullets, ``` code fences,
 | tables |, **bold**, *italic*, `code`, [text](url).
 
-Usage:  python docs/tools/make_whitepaper_pdf.py
+Usage:  python docs/tools/make_whitepaper_pdf.py [en|fr]   (default: both)
 Output: docs/MCPTransfer-WhitePaper-v1.0.pdf
+        docs/MCPTransfer-WhitePaper-v1.0.fr.pdf
 """
 
 from __future__ import annotations
@@ -29,8 +30,28 @@ from reportlab.platypus import (
 from reportlab.platypus.tableofcontents import TableOfContents
 
 ROOT = Path(__file__).resolve().parents[2]
-SRC = ROOT / "docs" / "WHITEPAPER.md"
-OUT = ROOT / "docs" / "MCPTransfer-WhitePaper-v1.0.pdf"
+LANGS = {
+    "en": {
+        "src": ROOT / "docs" / "WHITEPAPER.md",
+        "out": ROOT / "docs" / "MCPTransfer-WhitePaper-v1.0.pdf",
+        "contents": "Contents",
+        "footer": "MCPTransfer — White Paper v1.0",
+        "pdf_title": "MCPTransfer White Paper v1.0",
+        "note": "Sent for review to blockchain teams and foundations. "
+                "Reference implementation and live deployment available "
+                "on request.",
+    },
+    "fr": {
+        "src": ROOT / "docs" / "WHITEPAPER.fr.md",
+        "out": ROOT / "docs" / "MCPTransfer-WhitePaper-v1.0.fr.pdf",
+        "contents": "Sommaire",
+        "footer": "MCPTransfer — Livre blanc v1.0",
+        "pdf_title": "MCPTransfer Livre blanc v1.0",
+        "note": "Adressé aux équipes blockchain et aux fondations pour "
+                "relecture. Implémentation de référence et déploiement live "
+                "disponibles sur demande.",
+    },
+}
 
 NAVY = colors.HexColor("#14213D")
 BLUE = colors.HexColor("#2563EB")
@@ -140,7 +161,7 @@ def footer(canvas, doc):
     canvas.saveState()
     canvas.setFont("Body", 8)
     canvas.setFillColor(GREY)
-    canvas.drawString(20 * mm, 12 * mm, "MCPTransfer — White Paper v1.0")
+    canvas.drawString(20 * mm, 12 * mm, doc.footer_text)
     canvas.drawRightString(A4[0] - 20 * mm, 12 * mm, f"{doc.page}")
     canvas.setStrokeColor(colors.HexColor("#D8DEE8"))
     canvas.setLineWidth(0.5)
@@ -148,7 +169,7 @@ def footer(canvas, doc):
     canvas.restoreState()
 
 
-def build_story(md: str, avail: float) -> list:
+def build_story(md: str, avail: float, lang: dict) -> list:
     lines = md.splitlines()
     story: list = []
     i = 0
@@ -171,13 +192,11 @@ def build_story(md: str, avail: float) -> list:
         elif l.startswith("**Jean-Romain"):
             story.append(Paragraph(inline(l), S["meta"]))
     story += [Spacer(1, 60 * mm),
-              Paragraph("Sent for review to blockchain teams and foundations. "
-                        "Reference implementation and live deployment "
-                        "available on request.", S["meta"]),
+              Paragraph(lang["note"], S["meta"]),
               PageBreak()]
 
     # ── table of contents ──────────────────────────────────────────────────
-    story.append(Paragraph("Contents", S["h1-unlisted"]))
+    story.append(Paragraph(lang["contents"], S["h1-unlisted"]))
     toc = TableOfContents()
     toc.levelStyles = [S["toch1"]]
     story += [toc, PageBreak()]
@@ -243,20 +262,27 @@ def build_story(md: str, avail: float) -> list:
     return story
 
 
-def main() -> int:
-    md = SRC.read_text(encoding="utf-8")
+def build(lang: dict) -> None:
+    md = lang["src"].read_text(encoding="utf-8")
     margin = 20 * mm
     avail = A4[0] - 2 * margin
-    doc = Doc(str(OUT), pagesize=A4,
+    doc = Doc(str(lang["out"]), pagesize=A4,
               leftMargin=margin, rightMargin=margin,
               topMargin=18 * mm, bottomMargin=22 * mm,
-              title="MCPTransfer White Paper v1.0",
+              title=lang["pdf_title"],
               author="Jean-Romain Bouquet")
+    doc.footer_text = lang["footer"]
     frame = Frame(margin, 22 * mm, avail, A4[1] - 40 * mm, id="main")
     doc.addPageTemplates([PageTemplate(id="page", frames=[frame],
                                        onPage=footer)])
-    doc.multiBuild(build_story(md, avail))
-    print(f"OK -> {OUT}")
+    doc.multiBuild(build_story(md, avail, lang))
+    print(f"OK -> {lang['out']}")
+
+
+def main() -> int:
+    wanted = sys.argv[1:] or list(LANGS)
+    for code in wanted:
+        build(LANGS[code])
     return 0
 
 
