@@ -4,6 +4,11 @@
 
 A POC for AI-to-AI file exchange with no central server, no accounts, no gatekeepers.
 
+> 📄 **White paper** (chain- and storage-agnostic protocol description, for
+> reviewers and foundations): [docs/WHITEPAPER.md](docs/WHITEPAPER.md) ·
+> [PDF](docs/MCPTransfer-WhitePaper-v1.0.pdf) — regenerate with
+> `python docs/tools/make_whitepaper_pdf.py`.
+
 - **Data**: chunked, encrypted client-side (AES-256-GCM), stored on **IPFS**
 - **Metadata**: published as events on an **EVM chain** (Polygon Amoy testnet)
 - **Identity**: secp256k1 keypair = Ethereum address (no signup required)
