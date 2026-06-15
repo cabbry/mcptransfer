@@ -52,6 +52,7 @@ public sealed class Secp256k1KeyPair : IDisposable
     private byte[]? _publicKeyCompressed;
     private byte[]? _publicKeyUncompressed;
     private EthereumAddress? _address;
+    private bool _disposed;
 
     private Secp256k1KeyPair(BigInteger privateScalar, ECPoint publicPoint)
     {
@@ -97,9 +98,22 @@ public sealed class Secp256k1KeyPair : IDisposable
     }
 
     public ReadOnlySpan<byte> PrivateKey
-        => _privateKeyBytes ??= BigIntegers.AsUnsignedByteArray(PrivateKeyByteLength, _privateScalar);
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _privateKeyBytes ??= BigIntegers.AsUnsignedByteArray(PrivateKeyByteLength, _privateScalar);
+        }
+    }
 
-    /// <summary>Zero the cached private-key bytes (best-effort).</summary>
+    /// <summary>
+    /// Zero the cached private-key bytes (best-effort) and mark the keypair
+    /// unusable. After <see cref="Dispose"/>, any private-key access throws
+    /// <see cref="ObjectDisposedException"/> — otherwise the lazy getter would
+    /// silently regenerate the just-zeroed bytes from the in-memory scalar,
+    /// defeating the wipe. (BouncyCastle's internal copy of the scalar still
+    /// cannot be zeroed — see docs/CRYPTO.md, Zeroization.)
+    /// </summary>
     public void Dispose()
     {
         if (_privateKeyBytes is not null)
@@ -107,6 +121,7 @@ public sealed class Secp256k1KeyPair : IDisposable
             System.Security.Cryptography.CryptographicOperations.ZeroMemory(_privateKeyBytes);
             _privateKeyBytes = null;
         }
+        _disposed = true;
     }
 
     public ReadOnlySpan<byte> PublicKeyCompressed
@@ -125,6 +140,7 @@ public sealed class Secp256k1KeyPair : IDisposable
     /// </summary>
     public byte[] Ecdh(ReadOnlySpan<byte> peerPublicKey)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (peerPublicKey.Length is not PublicKeyCompressedByteLength
             and not PublicKeyUncompressedByteLength)
         {
@@ -151,6 +167,7 @@ public sealed class Secp256k1KeyPair : IDisposable
     /// </summary>
     public byte[] SignEcdsa(ReadOnlySpan<byte> messageHash)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (messageHash.Length != MessageHashByteLength)
             throw new ArgumentException(
                 $"Message hash must be exactly {MessageHashByteLength} bytes (got {messageHash.Length}).",

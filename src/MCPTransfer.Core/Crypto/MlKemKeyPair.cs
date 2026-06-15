@@ -24,6 +24,7 @@ public sealed class MlKemKeyPair : IDisposable
 
     private readonly MLKemPrivateKeyParameters _privateParameters;
     private byte[]? _privateEncoded;
+    private bool _disposed;
 
     public MlKemPublicKey PublicKey { get; }
 
@@ -58,9 +59,20 @@ public sealed class MlKemKeyPair : IDisposable
     }
 
     public ReadOnlySpan<byte> PrivateKeyEncoded
-        => _privateEncoded ??= _privateParameters.GetEncoded();
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _privateEncoded ??= _privateParameters.GetEncoded();
+        }
+    }
 
-    /// <summary>Zero the cached private-key encoding (best-effort).</summary>
+    /// <summary>
+    /// Zero the cached private-key encoding (best-effort) and mark the keypair
+    /// unusable: after <see cref="Dispose"/>, private-key access and
+    /// <see cref="Decapsulate"/> throw <see cref="ObjectDisposedException"/> so
+    /// the lazy getter cannot silently regenerate the wiped bytes.
+    /// </summary>
     public void Dispose()
     {
         if (_privateEncoded is not null)
@@ -68,6 +80,7 @@ public sealed class MlKemKeyPair : IDisposable
             System.Security.Cryptography.CryptographicOperations.ZeroMemory(_privateEncoded);
             _privateEncoded = null;
         }
+        _disposed = true;
     }
 
     /// <summary>
@@ -76,6 +89,7 @@ public sealed class MlKemKeyPair : IDisposable
     /// </summary>
     public byte[] Decapsulate(ReadOnlySpan<byte> ciphertext)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (ciphertext.Length != MlKemPublicKey.CiphertextByteLength)
             throw new ArgumentException(
                 $"ML-KEM-768 ciphertext must be exactly {MlKemPublicKey.CiphertextByteLength} bytes (got {ciphertext.Length}).",

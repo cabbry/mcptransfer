@@ -34,6 +34,7 @@ public sealed class MlDsaKeyPair : IDisposable
     private readonly MLDsaPublicKeyParameters _publicParameters;
     private byte[]? _privateEncoded;
     private byte[]? _publicEncoded;
+    private bool _disposed;
 
     private MlDsaKeyPair(MLDsaPrivateKeyParameters priv, MLDsaPublicKeyParameters pub)
     {
@@ -61,12 +62,24 @@ public sealed class MlDsaKeyPair : IDisposable
     }
 
     public ReadOnlySpan<byte> PrivateKeyEncoded
-        => _privateEncoded ??= _privateParameters.GetEncoded();
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _privateEncoded ??= _privateParameters.GetEncoded();
+        }
+    }
 
     public ReadOnlySpan<byte> PublicKeyEncoded
         => _publicEncoded ??= _publicParameters.GetEncoded();
 
-    /// <summary>Zero the cached private-key encoding (best-effort).</summary>
+    /// <summary>
+    /// Zero the cached private-key encoding (best-effort) and mark the keypair
+    /// unusable: after <see cref="Dispose"/>, private-key access and
+    /// <see cref="Sign"/> throw <see cref="ObjectDisposedException"/> so the
+    /// lazy getter cannot silently regenerate the wiped bytes. The public key
+    /// stays readable.
+    /// </summary>
     public void Dispose()
     {
         if (_privateEncoded is not null)
@@ -74,11 +87,13 @@ public sealed class MlDsaKeyPair : IDisposable
             System.Security.Cryptography.CryptographicOperations.ZeroMemory(_privateEncoded);
             _privateEncoded = null;
         }
+        _disposed = true;
     }
 
     /// <summary>Sign <paramref name="message"/> and return the 3309-byte ML-DSA-65 signature.</summary>
     public byte[] Sign(ReadOnlySpan<byte> message)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         var signer = new MLDsaSigner(Params, deterministic: false);
         signer.Init(forSigning: true, _privateParameters);
         var msg = message.ToArray();
