@@ -68,8 +68,8 @@ public static class TransferTools
         McpAgentContext ctx,
         [Description("Path to the local file to send (readable by the server). Confined to MCPTX_MCP_ROOT when set.")] string path,
         [Description("Recipient: a handle (e.g. 'bob') or a 0x Ethereum address.")] string to,
-        [Description("Optional MIME type; defaults to application/octet-stream.")] string? mime,
-        CancellationToken cancellationToken)
+        [Description("Optional MIME type; defaults to application/octet-stream.")] string? mime = null,
+        CancellationToken cancellationToken = default)
     {
         // Confine the read to the workspace root (no-op when unconfined).
         var resolvedPath = ctx.Workspace.Resolve(path, nameof(path));
@@ -120,8 +120,8 @@ public static class TransferTools
     [Description("List FileSent events addressed to this agent. Optional 'since_block' (defaults to the last 10000 blocks). Read-only.")]
     public static async Task<string> Inbox(
         McpAgentContext ctx,
-        [Description("Optional starting block number; defaults to latest-10000.")] ulong? sinceBlock,
-        CancellationToken cancellationToken)
+        [Description("Optional starting block number; defaults to latest-10000.")] ulong? sinceBlock = null,
+        CancellationToken cancellationToken = default)
     {
         var latest = await ctx.Chain.FileRegistry.GetLatestBlockNumberAsync(cancellationToken).ConfigureAwait(false);
         var (fromBlock, _) = InboxWindow.Compute(latest, sinceBlock);
@@ -210,8 +210,8 @@ public static class TransferTools
         McpAgentContext ctx,
         [Description("The manifest CID to fetch (from an inbox entry).")] string cid,
         [Description("Output path to write the decrypted file to. Confined to MCPTX_MCP_ROOT when set.")] string outPath,
-        [Description("Optional 0x content hash from the inbox entry; when given, the manifest must match it or the receive is refused.")] string? expectHash,
-        CancellationToken cancellationToken)
+        [Description("Optional 0x content hash from the inbox entry; when given, the manifest must match it or the receive is refused.")] string? expectHash = null,
+        CancellationToken cancellationToken = default)
     {
         // Confine the write to the workspace root (no-op when unconfined) so a
         // host cannot clobber identity.json / autostart scripts / etc.

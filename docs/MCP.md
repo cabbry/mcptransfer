@@ -81,6 +81,11 @@ catches the exception and sets `isError`).
 giving an MCP host the power to permanently hand the agent's name to an
 arbitrary address would be an excessive authority grant.)
 
+The optional tool parameters (`mime`, `expect_hash`, `since_block`) are
+genuinely optional in the tool schema (they carry a `null` default), so a host
+may omit them. For a two-machine, both-ends-Claude walkthrough see
+[docs/MCP-DEMO.md](MCP-DEMO.md).
+
 `send_file(path, to, mime?)` and `receive_file(cid, outPath)` operate on
 **paths on the server's filesystem** — the natural model for a local MCP
 server that shares a filesystem with its host.
