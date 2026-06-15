@@ -18,11 +18,27 @@ public sealed record IdentityEncryptionParams(int MemoryKib, int Iterations, int
 {
     public static IdentityEncryptionParams Default { get; } = new(19_456, 2, 1);
 
+    // Upper bounds matter for security, not just sanity: the cost parameters
+    // are read from the (potentially corrupt or hostile) v3 file header, and
+    // DeriveKey allocates `MemoryKib` BEFORE the AES-GCM tag is checked. Without
+    // a ceiling, a crafted header (e.g. argon2_memory_kib near int.MaxValue ≈
+    // 2 TiB) would OOM/hang the loader. 1 GiB is ~55× the default — far beyond
+    // any legitimate config, well short of a process-killing allocation.
+    /// <summary>Hard ceiling on Argon2 memory (1 GiB), enforced on load.</summary>
+    public const int MaxMemoryKib = 1_048_576;
+    /// <summary>Hard ceiling on Argon2 iterations.</summary>
+    public const int MaxIterations = 64;
+    /// <summary>Hard ceiling on Argon2 parallelism (lanes).</summary>
+    public const int MaxParallelism = 16;
+
     internal void Validate()
     {
-        if (MemoryKib < 8) throw new ArgumentOutOfRangeException(nameof(MemoryKib), "Argon2 memory must be >= 8 KiB.");
-        if (Iterations < 1) throw new ArgumentOutOfRangeException(nameof(Iterations), "Argon2 iterations must be >= 1.");
-        if (Parallelism < 1) throw new ArgumentOutOfRangeException(nameof(Parallelism), "Argon2 parallelism must be >= 1.");
+        if (MemoryKib is < 8 or > MaxMemoryKib)
+            throw new ArgumentOutOfRangeException(nameof(MemoryKib), $"Argon2 memory must be in [8, {MaxMemoryKib}] KiB (got {MemoryKib}).");
+        if (Iterations is < 1 or > MaxIterations)
+            throw new ArgumentOutOfRangeException(nameof(Iterations), $"Argon2 iterations must be in [1, {MaxIterations}] (got {Iterations}).");
+        if (Parallelism is < 1 or > MaxParallelism)
+            throw new ArgumentOutOfRangeException(nameof(Parallelism), $"Argon2 parallelism must be in [1, {MaxParallelism}] (got {Parallelism}).");
     }
 }
 
@@ -197,7 +213,12 @@ public static class AgentIdentityFile
 
     public static AgentIdentity Deserialize(ReadOnlySpan<byte> bytes, string? passphrase = null)
     {
-        if (PeekVersion(bytes) == EncryptedVersion)
+        // Parse the file JSON ONCE; the version field decides the branch.
+        using var doc = ParseJson(bytes);
+        var root = doc.RootElement;
+        var version = ReadVersion(root);
+
+        if (version == EncryptedVersion)
         {
             if (string.IsNullOrEmpty(passphrase))
             {
@@ -205,10 +226,11 @@ public static class AgentIdentityFile
                     "This identity file is encrypted (v3) but no passphrase was provided. "
                     + $"Set the {PassphraseEnvVar} environment variable and retry.");
             }
-            var plaintext = DecryptEnvelope(bytes, passphrase);
+            var plaintext = DecryptEnvelope(root, passphrase);
             try
             {
-                return DeserializePlaintext(plaintext);
+                using var inner = ParseJson(plaintext);
+                return DeserializePlaintext(inner.RootElement, ReadVersion(inner.RootElement));
             }
             finally
             {
@@ -216,17 +238,11 @@ public static class AgentIdentityFile
             }
         }
 
-        return DeserializePlaintext(bytes);
+        return DeserializePlaintext(root, version);
     }
 
-    private static AgentIdentity DeserializePlaintext(ReadOnlySpan<byte> bytes)
+    private static AgentIdentity DeserializePlaintext(JsonElement root, int version)
     {
-        using var doc = JsonDocument.Parse(bytes.ToArray());
-        var root = doc.RootElement;
-
-        if (!root.TryGetProperty("version", out var versionEl) || versionEl.ValueKind != JsonValueKind.Number)
-            throw new InvalidOperationException("Identity file is missing a numeric 'version'.");
-        var version = versionEl.GetInt32();
         if (version != CurrentVersion)
         {
             throw new InvalidOperationException(
@@ -237,19 +253,36 @@ public static class AgentIdentityFile
         }
 
         var ecHex = RequireString(root, "secp256k1_private_key");
-        var mlkemB64 = RequireString(root, "mlkem_private_key");
-        var mldsaB64 = RequireString(root, "mldsa_private_key");
 
         // The FromEncoded* constructors copy out of these buffers, so the
         // decode intermediates can be zeroed immediately. (The JSON strings
         // themselves are immanageable: .NET strings cannot be zeroed.)
-        var mlkemBytes = Convert.FromBase64String(mlkemB64);
-        var mldsaBytes = Convert.FromBase64String(mldsaB64);
+        var mlkemBytes = RequireBase64(root, "mlkem_private_key");
+        var mldsaBytes = RequireBase64(root, "mldsa_private_key");
         try
         {
-            var ec = Secp256k1KeyPair.FromPrivateKeyHex(ecHex);
-            var mlkem = MlKemKeyPair.FromEncodedPrivateKey(mlkemBytes);
-            var mldsa = MlDsaKeyPair.FromEncodedPrivateKey(mldsaBytes);
+            // Wrap every malformed-key exception as a clean InvalidOperationException
+            // so a corrupt identity file yields the actionable "could not load"
+            // message rather than a raw FormatException/ArgumentException crash.
+            Secp256k1KeyPair ec;
+            try { ec = Secp256k1KeyPair.FromPrivateKeyHex(ecHex); }
+            catch (Exception ex) when (ex is ArgumentException or FormatException)
+            {
+                throw new InvalidOperationException($"Identity 'secp256k1_private_key' is invalid: {ex.Message}", ex);
+            }
+
+            MlKemKeyPair mlkem;
+            MlDsaKeyPair mldsa;
+            try
+            {
+                mlkem = MlKemKeyPair.FromEncodedPrivateKey(mlkemBytes);
+                mldsa = MlDsaKeyPair.FromEncodedPrivateKey(mldsaBytes);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new InvalidOperationException($"Identity post-quantum key material is invalid: {ex.Message}", ex);
+            }
+
             return AgentIdentity.FromKeys(ec, mlkem, mldsa);
         }
         finally
@@ -318,11 +351,8 @@ public static class AgentIdentityFile
         }
     }
 
-    private static byte[] DecryptEnvelope(ReadOnlySpan<byte> bytes, string passphrase)
+    private static byte[] DecryptEnvelope(JsonElement root, string passphrase)
     {
-        using var doc = JsonDocument.Parse(bytes.ToArray());
-        var root = doc.RootElement;
-
         var kdf = RequireString(root, "kdf");
         if (kdf != "argon2id")
             throw new InvalidOperationException($"Unsupported identity KDF '{kdf}' (expected 'argon2id').");
@@ -331,14 +361,22 @@ public static class AgentIdentityFile
             RequireInt(root, "argon2_memory_kib"),
             RequireInt(root, "argon2_iterations"),
             RequireInt(root, "argon2_parallelism"));
-        kdfParams.Validate();
+        // Enforce the cost ceilings BEFORE DeriveKey allocates; surface a bad
+        // header as a clean InvalidOperationException (not ArgumentOutOfRange,
+        // which the load boundary doesn't catch).
+        try
+        {
+            kdfParams.Validate();
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            throw new InvalidOperationException($"Identity file has invalid Argon2 parameters: {ex.Message}", ex);
+        }
 
         var salt = RequireBase64(root, "salt", SaltByteLength);
         var nonce = RequireBase64(root, "nonce", NonceByteLength);
         var tag = RequireBase64(root, "tag", TagByteLength);
-        var ciphertext = root.TryGetProperty("ciphertext", out var ctEl) && ctEl.ValueKind == JsonValueKind.String
-            ? ctEl.GetBytesFromBase64()
-            : throw new InvalidOperationException("Identity file is missing 'ciphertext'.");
+        var ciphertext = RequireBase64(root, "ciphertext"); // variable length; FormatException wrapped
 
         var key = DeriveKey(passphrase, salt, kdfParams);
         var plaintext = new byte[ciphertext.Length];
@@ -399,14 +437,11 @@ public static class AgentIdentityFile
             $"mcptx-identity-v{EncryptedVersion}|argon2id|{Convert.ToBase64String(salt)}"
             + $"|{kdfParams.MemoryKib}|{kdfParams.Iterations}|{kdfParams.Parallelism}");
 
-    private static int PeekVersion(ReadOnlySpan<byte> bytes)
+    private static JsonDocument ParseJson(ReadOnlySpan<byte> bytes)
     {
         try
         {
-            using var doc = JsonDocument.Parse(bytes.ToArray());
-            return doc.RootElement.TryGetProperty("version", out var v) && v.ValueKind == JsonValueKind.Number
-                ? v.GetInt32()
-                : -1;
+            return JsonDocument.Parse(bytes.ToArray());
         }
         catch (JsonException ex)
         {
@@ -414,26 +449,47 @@ public static class AgentIdentityFile
         }
     }
 
+    private static int ReadVersion(JsonElement root)
+    {
+        // TryGetInt32 (not GetInt32) so an out-of-int32 'version' yields a clean
+        // error instead of an uncaught FormatException.
+        if (!root.TryGetProperty("version", out var v) || v.ValueKind != JsonValueKind.Number
+            || !v.TryGetInt32(out var version))
+        {
+            throw new InvalidOperationException("Identity file is missing a valid numeric 'version'.");
+        }
+        return version;
+    }
+
     private static int RequireInt(JsonElement root, string name)
     {
         if (!root.TryGetProperty(name, out var el) || el.ValueKind != JsonValueKind.Number)
             throw new InvalidOperationException($"Identity file is missing numeric property '{name}'.");
-        return el.GetInt32();
+        // TryGetInt32 so a number outside int32 range (e.g. a crafted Argon2
+        // cost) is a clean error, not an uncaught FormatException.
+        if (!el.TryGetInt32(out var value))
+            throw new InvalidOperationException($"Identity file property '{name}' is out of the supported integer range.");
+        return value;
     }
 
-    private static byte[] RequireBase64(JsonElement root, string name, int expectedLength)
+    /// <summary>Read a required base64 string property, wrapping a malformed value.</summary>
+    private static byte[] RequireBase64(JsonElement root, string name)
     {
         if (!root.TryGetProperty(name, out var el) || el.ValueKind != JsonValueKind.String)
             throw new InvalidOperationException($"Identity file is missing string property '{name}'.");
-        byte[] value;
         try
         {
-            value = el.GetBytesFromBase64();
+            return el.GetBytesFromBase64();
         }
         catch (FormatException ex)
         {
             throw new InvalidOperationException($"Identity file property '{name}' is not valid base64.", ex);
         }
+    }
+
+    private static byte[] RequireBase64(JsonElement root, string name, int expectedLength)
+    {
+        var value = RequireBase64(root, name);
         if (value.Length != expectedLength)
             throw new InvalidOperationException(
                 $"Identity file property '{name}' must be {expectedLength} bytes (got {value.Length}).");

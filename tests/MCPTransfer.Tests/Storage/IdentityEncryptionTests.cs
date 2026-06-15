@@ -145,4 +145,87 @@ public class IdentityEncryptionTests
         Assert.Equal(2, p.Iterations);
         Assert.Equal(1, p.Parallelism);
     }
+
+    // ── Robustness on crafted/corrupt v3 input (review findings #2, #3) ──
+
+    private static byte[] CraftV3(Action<Dictionary<string, object>> mutate)
+    {
+        // Start from a valid encrypted file, parse to a mutable map, mutate, re-serialize.
+        var valid = AgentIdentityFile.SerializeEncrypted(AgentIdentity.Generate(), Passphrase, CheapKdf);
+        using var doc = System.Text.Json.JsonDocument.Parse(valid);
+        var map = new Dictionary<string, object>();
+        foreach (var p in doc.RootElement.EnumerateObject())
+        {
+            map[p.Name] = p.Value.ValueKind == System.Text.Json.JsonValueKind.Number
+                ? p.Value.GetInt64()
+                : p.Value.GetString()!;
+        }
+        mutate(map);
+        return System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(map);
+    }
+
+    [Fact]
+    public void HugeArgonMemory_RejectedCleanly_NoAllocation()
+    {
+        // Crafted header demanding ~2 TiB; must be refused via the upper bound
+        // BEFORE DeriveKey allocates, as a clean InvalidOperationException.
+        var crafted = CraftV3(m => m["argon2_memory_kib"] = 2_000_000_000L);
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => AgentIdentityFile.Deserialize(crafted, Passphrase));
+        Assert.Contains("Argon2", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ArgonParamOutOfInt32Range_CleanError_NotFormatException()
+    {
+        var crafted = CraftV3(m => m["argon2_memory_kib"] = 99_999_999_999L); // > int.MaxValue
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => AgentIdentityFile.Deserialize(crafted, Passphrase));
+        Assert.Contains("argon2_memory_kib", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void NonBase64Ciphertext_CleanError_NotFormatException()
+    {
+        var crafted = CraftV3(m => m["ciphertext"] = "!!!! not base64 !!!!");
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => AgentIdentityFile.Deserialize(crafted, Passphrase));
+        Assert.Contains("ciphertext", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void MalformedJson_CleanError()
+    {
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => AgentIdentityFile.Deserialize(Encoding.UTF8.GetBytes("{ not json"), Passphrase));
+        Assert.Contains("not valid JSON", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void MalformedV2KeyMaterial_CleanError_NotRawCrash()
+    {
+        // v2 plaintext with non-base64 ML-KEM key -> clean InvalidOperationException.
+        var json = """
+            {
+              "mldsa_private_key": "AA==",
+              "mlkem_private_key": "@@@notbase64@@@",
+              "secp256k1_private_key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+              "version": 2
+            }
+            """;
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => AgentIdentityFile.Deserialize(Encoding.UTF8.GetBytes(json)));
+        Assert.Contains("mlkem_private_key", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void KdfCeilings_AreExposedAndAboveDefault()
+    {
+        // The end-to-end enforcement is covered by HugeArgonMemory_RejectedCleanly;
+        // here just pin the public ceilings and that the default sits under them.
+        Assert.Equal(1_048_576, IdentityEncryptionParams.MaxMemoryKib);
+        Assert.Equal(64, IdentityEncryptionParams.MaxIterations);
+        Assert.Equal(16, IdentityEncryptionParams.MaxParallelism);
+        Assert.True(IdentityEncryptionParams.Default.MemoryKib < IdentityEncryptionParams.MaxMemoryKib);
+    }
 }
