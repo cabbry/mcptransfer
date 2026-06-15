@@ -122,17 +122,8 @@ public static class TransferTools
         [Description("Optional starting block number; defaults to latest-10000.")] ulong? sinceBlock,
         CancellationToken cancellationToken)
     {
-        const ulong lookback = 10_000;
-        const ulong maxSpan = 50_000; // most public RPCs reject wider eth_getLogs ranges
         var latest = await ctx.Chain.FileRegistry.GetLatestBlockNumberAsync(cancellationToken).ConfigureAwait(false);
-        var fromBlock = sinceBlock ?? (latest > lookback ? latest - lookback : 0UL);
-        if (fromBlock > latest)
-            throw new InvalidOperationException($"since_block ({fromBlock}) is past the chain head ({latest}).");
-        if (latest - fromBlock > maxSpan)
-            throw new InvalidOperationException(
-                $"Requested block range {fromBlock}..{latest} ({latest - fromBlock} blocks) exceeds the "
-                + $"{maxSpan}-block limit most RPC providers enforce on eth_getLogs. Raise since_block "
-                + "(e.g. to a recent block) or page through history in windows.");
+        var (fromBlock, _) = InboxWindow.Compute(latest, sinceBlock);
 
         // Falls back to a ~450-block window when the RPC caps eth_getLogs.
         var scan = await ctx.Chain.FileRegistry
@@ -189,27 +180,9 @@ public static class TransferTools
                 "No Blocklist contract configured (set 'blocklist_address' in the config "
                 + "or the MCPTX_BLOCKLIST env var).");
 
-        // Resolve handle → address if needed.
-        MCPTransfer.Core.Crypto.EthereumAddress address;
-        string? handle = null;
-        if (sender.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            try
-            {
-                address = MCPTransfer.Core.Crypto.EthereumAddress.FromHex(sender);
-            }
-            catch (Exception ex) when (ex is ArgumentException or FormatException)
-            {
-                throw new InvalidOperationException($"'{sender}' is not a valid 0x address: {ex.Message}", ex);
-            }
-        }
-        else
-        {
-            HandleValidation.Validate(sender);
-            address = await ctx.Chain.AgentDirectory.ResolveAsync(sender, cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException($"Handle '{sender}' is not claimed on chain.");
-            handle = sender;
-        }
+        // Resolve a 0x address or a handle (shared parser; clean errors).
+        var (address, handle) = await HandleResolution
+            .ResolveRequiredAsync(ctx.Chain.AgentDirectory, sender, cancellationToken).ConfigureAwait(false);
 
         string txHash;
         await ctx.SigningLock.WaitAsync(cancellationToken).ConfigureAwait(false);

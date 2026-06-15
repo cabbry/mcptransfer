@@ -6,7 +6,7 @@ namespace MCPTransfer.Core.Chain;
 /// Query helpers over <see cref="IFileRegistryClient"/> that degrade
 /// gracefully on public RPC providers, which commonly cap the
 /// <c>eth_getLogs</c> block span far below our default scan windows
-/// (Amoy's public endpoint rejects even 10 000 blocks).
+/// (Amoy's public endpoint rejects even 450 blocks).
 /// </summary>
 public static class FileRegistryQueries
 {
@@ -36,34 +36,11 @@ public static class FileRegistryQueries
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(fileRegistry);
-        var span = latestBlock - fromBlock;
-        Exception lastError;
-        try
-        {
-            return await fileRegistry.FindByCidAsync(me, cid, fromBlock, latestBlock, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            lastError = ex;
-        }
-
-        foreach (var fallbackSpan in FallbackSpans)
-        {
-            if (fallbackSpan >= span) continue;
-            try
-            {
-                var narrowFrom = latestBlock > fallbackSpan ? latestBlock - fallbackSpan : 0UL;
-                return await fileRegistry.FindByCidAsync(me, cid, narrowFrom, latestBlock, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                lastError = ex;
-                span = fallbackSpan;
-            }
-        }
-        throw lastError;
+        var (result, _) = await RunWithShrinkingWindowAsync(
+            fromBlock, latestBlock,
+            (from, to) => fileRegistry.FindByCidAsync(me, cid, from, to, cancellationToken))
+            .ConfigureAwait(false);
+        return result;
     }
 
     /// <summary>
@@ -79,13 +56,37 @@ public static class FileRegistryQueries
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(fileRegistry);
+        return await RunWithShrinkingWindowAsync(
+            fromBlock, latestBlock,
+            (from, to) => fileRegistry.GetInboxAsync(me, from, to, cancellationToken))
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Run <paramref name="query"/> over [<paramref name="fromBlock"/>,
+    /// <paramref name="latestBlock"/>]; on a non-cancellation failure (typically
+    /// the provider's <c>eth_getLogs</c> range cap) retry over each strictly
+    /// narrower <see cref="FallbackSpans"/> window anchored at the chain head.
+    /// Returns the result and the <c>fromBlock</c> actually used (so a caller
+    /// can surface that the window shrank).
+    /// </summary>
+    private static async Task<(T Result, ulong FromBlock)> RunWithShrinkingWindowAsync<T>(
+        ulong fromBlock,
+        ulong latestBlock,
+        Func<ulong, ulong, Task<T>> query)
+    {
+        if (fromBlock > latestBlock)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(fromBlock),
+                $"fromBlock ({fromBlock}) must be <= latestBlock ({latestBlock}).");
+        }
+
         var span = latestBlock - fromBlock;
         Exception lastError;
         try
         {
-            var events = await fileRegistry.GetInboxAsync(me, fromBlock, latestBlock, cancellationToken)
-                .ConfigureAwait(false);
-            return (events, fromBlock);
+            return (await query(fromBlock, latestBlock).ConfigureAwait(false), fromBlock);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -95,12 +96,10 @@ public static class FileRegistryQueries
         foreach (var fallbackSpan in FallbackSpans)
         {
             if (fallbackSpan >= span) continue;
+            var narrowFrom = latestBlock > fallbackSpan ? latestBlock - fallbackSpan : 0UL;
             try
             {
-                var narrowFrom = latestBlock > fallbackSpan ? latestBlock - fallbackSpan : 0UL;
-                var events = await fileRegistry.GetInboxAsync(me, narrowFrom, latestBlock, cancellationToken)
-                    .ConfigureAwait(false);
-                return (events, narrowFrom);
+                return (await query(narrowFrom, latestBlock).ConfigureAwait(false), narrowFrom);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

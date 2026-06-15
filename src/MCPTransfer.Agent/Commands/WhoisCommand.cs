@@ -25,8 +25,10 @@ internal static class WhoisCommand
         string? handle;
         if (target.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
         {
-            try { address = EthereumAddress.FromHex(target); }
-            catch (ArgumentException ex) { return Common.Fail(ex.Message); }
+            // ParseAddress maps both ArgumentException (wrong length) and
+            // FormatException (non-hex chars) to a clean InvalidOperationException.
+            try { address = HandleResolution.ParseAddress(target); }
+            catch (InvalidOperationException ex) { return Common.Fail(ex.Message); }
             handle = await chain.AgentDirectory.ReverseResolveAsync(address, ct).ConfigureAwait(false);
         }
         else

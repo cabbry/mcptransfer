@@ -1,3 +1,5 @@
+using MCPTransfer.Core.Chain;
+
 namespace MCPTransfer.Agent.Commands;
 
 internal static class InboxCommand
@@ -6,8 +8,6 @@ internal static class InboxCommand
         "  mcptx inbox [--since BLOCK] [--identity PATH] [--config PATH]\n"
       + "      List FileSent events addressed to this agent. Default range is\n"
       + "      the last 10 000 blocks (~6h on Amoy 2s blocks).";
-
-    private const ulong DefaultLookbackBlocks = 10_000;
 
     public static async Task<int> RunAsync(string[] args, CancellationToken ct = default)
     {
@@ -24,9 +24,14 @@ internal static class InboxCommand
         {
             latest = await chain.FileRegistry.GetLatestBlockNumberAsync(ct).ConfigureAwait(false);
             var sinceFlag = Common.GetFlagValue(args, "--since");
-            fromBlock = sinceFlag is not null
-                ? ParseBlock(sinceFlag)
-                : (latest > DefaultLookbackBlocks ? latest - DefaultLookbackBlocks : 0UL);
+            ulong? since = sinceFlag is not null ? ParseBlock(sinceFlag) : null;
+            // Shared window logic: guards against a --since past the chain head
+            // (no unsigned underflow) and the over-wide span the RPC would reject.
+            (fromBlock, latest) = InboxWindow.Compute(latest, since);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            return Common.Fail(ex.Message);
         }
         catch (Exception ex)
         {

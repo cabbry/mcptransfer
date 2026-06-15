@@ -45,35 +45,9 @@ public static class RecipientResolver
         ArgumentNullException.ThrowIfNull(ipfs);
         ArgumentException.ThrowIfNullOrEmpty(recipient);
 
-        EthereumAddress address;
-        string? handle = null;
-
-        if (recipient.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-        {
-            try
-            {
-                address = EthereumAddress.FromHex(recipient);
-            }
-            catch (Exception ex) when (ex is ArgumentException or FormatException)
-            {
-                // Honor the documented contract: failures surface as
-                // InvalidOperationException, not a raw parse exception.
-                throw new InvalidOperationException(
-                    $"'{recipient}' is not a valid 0x Ethereum address: {ex.Message}", ex);
-            }
-        }
-        else
-        {
-            if (!HandleValidation.IsValid(recipient))
-            {
-                throw new InvalidOperationException(
-                    $"'{recipient}' is not a valid handle and doesn't look like a 0x address.");
-            }
-            var resolved = await chain.AgentDirectory.ResolveAsync(recipient, cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException($"Handle '{recipient}' is not claimed on chain.");
-            address = resolved;
-            handle = recipient;
-        }
+        // Parse a 0x address or resolve a handle (clean errors for both).
+        var (address, handle) = await HandleResolution
+            .ResolveRequiredAsync(chain.AgentDirectory, recipient, cancellationToken).ConfigureAwait(false);
 
         var keys = await chain.KeyRegistry.GetAsync(address, cancellationToken).ConfigureAwait(false);
         if (!keys.IsRegistered)

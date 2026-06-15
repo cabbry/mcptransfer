@@ -26,11 +26,8 @@ internal static class TransferHandleCommand
             return Common.Fail("missing --to <0xaddress> (the new owner).");
 
         EthereumAddress newOwner;
-        try { newOwner = EthereumAddress.FromHex(toArg); }
-        catch (Exception ex) when (ex is ArgumentException or FormatException)
-        {
-            return Common.Fail($"--to: '{toArg}' is not a valid 0x address: {ex.Message}");
-        }
+        try { newOwner = HandleResolution.ParseAddress(toArg); }
+        catch (InvalidOperationException ex) { return Common.Fail($"--to: {ex.Message}"); }
 
         var identity = await Common.TryLoadIdentityAsync(args, ct).ConfigureAwait(false);
         if (identity is null) return Common.ExitError;

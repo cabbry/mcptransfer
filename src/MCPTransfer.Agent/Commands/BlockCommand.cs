@@ -39,23 +39,19 @@ internal static class BlockCommand
                 + "Re-running 'mcptx config init --force' with the anvil-local profile fills it in.");
         }
 
-        // Resolve handle → address if needed.
+        // Resolve a 0x address or a handle (clean errors for both: malformed
+        // 0x, invalid handle shape, and unclaimed handle all surface as
+        // InvalidOperationException rather than crashing the process).
         EthereumAddress sender;
-        string? senderHandle = null;
-        if (target.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        string? senderHandle;
+        try
         {
-            try { sender = EthereumAddress.FromHex(target); }
-            catch (ArgumentException ex) { return Common.Fail(ex.Message); }
+            (sender, senderHandle) = await HandleResolution
+                .ResolveRequiredAsync(chain.AgentDirectory, target, ct).ConfigureAwait(false);
         }
-        else
+        catch (InvalidOperationException ex)
         {
-            if (!HandleValidation.IsValid(target))
-                return Common.Fail($"'{target}' is not a valid handle and doesn't look like an address.");
-            var resolved = await chain.AgentDirectory.ResolveAsync(target, ct).ConfigureAwait(false);
-            if (resolved is null)
-                return Common.Fail($"handle '{target}' is not claimed on chain.");
-            sender = resolved;
-            senderHandle = target;
+            return Common.Fail(ex.Message);
         }
 
         var label = senderHandle is null ? sender.ToString() : $"{senderHandle} ({sender})";

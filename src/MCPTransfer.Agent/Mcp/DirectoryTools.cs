@@ -59,14 +59,7 @@ public static class DirectoryTools
         string? handle;
         if (target.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
         {
-            try
-            {
-                address = EthereumAddress.FromHex(target);
-            }
-            catch (Exception ex) when (ex is ArgumentException or FormatException)
-            {
-                throw new InvalidOperationException($"'{target}' is not a valid 0x address: {ex.Message}", ex);
-            }
+            address = HandleResolution.ParseAddress(target);
             handle = await ctx.Chain.AgentDirectory.ReverseResolveAsync(address, cancellationToken).ConfigureAwait(false);
         }
         else
