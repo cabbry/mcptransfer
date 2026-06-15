@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+using MCPTransfer.Core.Crypto;
 
 namespace MCPTransfer.Agent.Commands;
 
@@ -22,13 +22,13 @@ internal static class WhoamiCommand
 
         var mlkemBytes = identity.MlKem.PublicKey.Bytes;
         var mlkemB64 = Convert.ToBase64String(mlkemBytes);
-        var mlkemSha = Convert.ToHexString(SHA256.HashData(mlkemBytes)).ToLowerInvariant()[..16];
+        var mlkemFp = HexFormat.Fingerprint(mlkemBytes);
 
         var mldsaBytes = identity.MlDsa.PublicKeyEncoded;
-        var mldsaSha = Convert.ToHexString(SHA256.HashData(mldsaBytes)).ToLowerInvariant()[..16];
+        var mldsaFp = HexFormat.Fingerprint(mldsaBytes);
 
         Console.WriteLine($"Address                : {identity.Address}");
-        Console.WriteLine($"secp256k1 public key   : 0x{Convert.ToHexString(identity.Secp256k1.PublicKeyCompressed).ToLowerInvariant()}");
+        Console.WriteLine($"secp256k1 public key   : {HexFormat.ToHex0x(identity.Secp256k1.PublicKeyCompressed)}");
         if (full)
         {
             Console.WriteLine($"ML-KEM-768 public key  : {mlkemB64}");
@@ -37,9 +37,9 @@ internal static class WhoamiCommand
         else
         {
             Console.WriteLine($"ML-KEM-768 public key  : {mlkemB64[..20]}...{mlkemB64[^8..]}");
-            Console.WriteLine($"  ({mlkemBytes.Length} bytes, sha256:{mlkemSha}, use --full to print)");
+            Console.WriteLine($"  ({mlkemBytes.Length} bytes, {mlkemFp}, use --full to print)");
         }
-        Console.WriteLine($"ML-DSA-65 signing key  : {mldsaBytes.Length} bytes, sha256:{mldsaSha}");
+        Console.WriteLine($"ML-DSA-65 signing key  : {mldsaBytes.Length} bytes, {mldsaFp}");
 
         return Common.ExitSuccess;
     }

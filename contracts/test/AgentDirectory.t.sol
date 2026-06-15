@@ -213,6 +213,13 @@ contract AgentDirectoryTest is Test {
         dir.transfer("alice-ai", carol);
         assertEq(dir.handleToAddress("alice-ai"), carol);
         assertEq(dir.addressToHandle(carol), "alice-ai");
+        // The intermediate owner (bob) MUST be freed too — otherwise the 1:1
+        // invariant breaks and bob would fail a later claim() despite owning
+        // no handle. (Regression guard for the onward-transfer free.)
+        assertEq(dir.addressToHandle(bob), "", "intermediate owner must be freed");
+        vm.prank(bob);
+        dir.claim("bob-fresh"); // would revert "address already has a handle" if not freed
+        assertEq(dir.handleToAddress("bob-fresh"), bob);
     }
 
     function test_transfer_reverts_when_caller_not_owner() public {

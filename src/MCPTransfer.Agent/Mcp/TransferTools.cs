@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using MCPTransfer.Core.Chain;
+using MCPTransfer.Core.Crypto;
 using MCPTransfer.Core.Envelope;
 using ModelContextProtocol.Server;
 
@@ -36,7 +37,7 @@ public static class TransferTools
             address = ctx.Identity.Address.ToString(),
             tx_hash = result.TxHash,
             secp256k1_fingerprint = DirectoryTools.Fingerprint(ctx.Identity.Secp256k1.PublicKeyCompressed),
-            mlkem_hash = "0x" + Convert.ToHexString(result.MlKemHash).ToLowerInvariant(),
+            mlkem_hash = HexFormat.ToHex0x(result.MlKemHash),
             mlkem_cid = result.MlKemCid,
         }, Json);
     }
@@ -108,7 +109,7 @@ public static class TransferTools
             recipient = recipient.Address.ToString(),
             recipient_handle = recipient.Handle,
             manifest_cid = write.ManifestCid,
-            content_hash = "0x" + Convert.ToHexString(contentHash).ToLowerInvariant(),
+            content_hash = HexFormat.ToHex0x(contentHash),
             chunks = write.SignedManifest.Manifest.Chunks.Count,
             total_size = write.SignedManifest.Manifest.TotalSize,
             tx_hash = txHash,
@@ -151,7 +152,7 @@ public static class TransferTools
                 timestamp = e.Timestamp.ToString("u"),
                 from = e.From.ToString(),
                 cid = e.Cid,
-                content_hash = "0x" + Convert.ToHexString(e.ContentHash).ToLowerInvariant(),
+                content_hash = HexFormat.ToHex0x(e.ContentHash),
             }),
         }, Json);
     }

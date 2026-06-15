@@ -98,7 +98,7 @@ internal static class SendCommand
                 identity.Secp256k1,
                 ct).ConfigureAwait(false);
             Console.WriteLine($"  tx hash: {txHash}");
-            Console.WriteLine($"  content hash: 0x{Convert.ToHexString(contentHash).ToLowerInvariant()}");
+            Console.WriteLine($"  content hash: {HexFormat.ToHex0x(contentHash)}");
             Console.WriteLine("✓ sent");
             return Common.ExitSuccess;
         }

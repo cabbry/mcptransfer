@@ -1,5 +1,5 @@
-using System.Security.Cryptography;
 using MCPTransfer.Core.Chain;
+using MCPTransfer.Core.Crypto;
 
 namespace MCPTransfer.Agent.Commands;
 
@@ -23,35 +23,23 @@ internal static class RegisterKeyCommand
         if (ipfs is null)
             return Common.Fail(ipfsErr ?? "could not build IPFS client.");
 
-        var ecPubkey = identity.Secp256k1.PublicKeyCompressed.ToArray();
-        var mlkemPubkey = identity.MlKem.PublicKey.Bytes.ToArray();
-        var ecSha = Convert.ToHexString(SHA256.HashData(ecPubkey)).ToLowerInvariant()[..16];
-        var mlkemSha = Convert.ToHexString(SHA256.HashData(mlkemPubkey)).ToLowerInvariant()[..16];
-
         Console.WriteLine($"Publishing keys for {identity.Address}");
-        Console.WriteLine($"  secp256k1 sha256:{ecSha}    ({ecPubkey.Length} bytes, stored on-chain)");
-        Console.WriteLine($"  mlkem     sha256:{mlkemSha}  ({mlkemPubkey.Length} bytes, pinned via {config.Ipfs.Kind})");
+        Console.WriteLine($"  secp256k1 {HexFormat.Fingerprint(identity.Secp256k1.PublicKeyCompressed)}    (33 bytes, stored on-chain)");
+        Console.WriteLine($"  mlkem     {HexFormat.Fingerprint(identity.MlKem.PublicKey.Bytes)}  (1184 bytes, pinned via {config.Ipfs.Kind})");
         Console.WriteLine($"  to chain {config.Chain.ChainId} via {config.Chain.RpcUrl}");
 
         try
         {
+            // KeyPublication pins the ML-KEM key then publishes the commitment;
+            // the contract's require()s already guarantee the stored entry, so
+            // no read-back round-trip is needed (the MCP register_key tool also
+            // skips it — kept consistent).
             var result = await KeyPublication.PublishAsync(chain.KeyRegistry, ipfs, identity, ct)
                 .ConfigureAwait(false);
             Console.WriteLine($"  mlkem cid : {result.MlKemCid}");
-            Console.WriteLine($"  mlkem hash: 0x{Convert.ToHexString(result.MlKemHash).ToLowerInvariant()}");
+            Console.WriteLine($"  mlkem hash: {HexFormat.ToHex0x(result.MlKemHash)}");
             Console.WriteLine($"  tx hash   : {result.TxHash}");
-
-            // Round-trip: the on-chain entry must echo what we just published.
-            var stored = await chain.KeyRegistry.GetAsync(identity.Address, ct).ConfigureAwait(false);
-            var ecMatches = stored.Secp256k1Compressed.AsSpan().SequenceEqual(ecPubkey);
-            var commitmentMatches = stored.MlKemHash.AsSpan().SequenceEqual(result.MlKemHash)
-                && stored.MlKemCid == result.MlKemCid;
-
-            if (ecMatches && commitmentMatches)
-                Console.WriteLine("  ✓ round-trip verified (on-chain entry matches)");
-            else
-                Console.WriteLine("  ! round-trip mismatch — verify chain state");
-
+            Console.WriteLine("  ✓ published");
             return Common.ExitSuccess;
         }
         catch (Exception ex)

@@ -51,6 +51,18 @@ contract BlocklistTest is Test {
         assertTrue(list.isBlocked(bob, alice));
     }
 
+    function test_set_reemits_event_on_unchanged_state() public {
+        // The NatSpec promises a re-emit even when the state is unchanged, so
+        // off-chain inbox readers can resync. Pin that documented behavior.
+        vm.prank(bob);
+        list.setBlocked(alice, true);
+
+        vm.expectEmit(true, true, false, true);
+        emit BlockSet(bob, alice, true);
+        vm.prank(bob);
+        list.setBlocked(alice, true); // unchanged -> must still emit
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Isolation: each recipient edits only its own list
     // ─────────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 using MCPTransfer.Core.Chain;
+using MCPTransfer.Core.Crypto;
 
 namespace MCPTransfer.Agent.Commands;
 
@@ -89,7 +90,7 @@ internal static class InboxCommand
             Console.WriteLine($"  [{i}] block {e.BlockNumber}  {ts}");
             Console.WriteLine($"      from        : {e.From}");
             Console.WriteLine($"      cid         : {e.Cid}");
-            Console.WriteLine($"      content hash: 0x{Convert.ToHexString(e.ContentHash).ToLowerInvariant()}");
+            Console.WriteLine($"      content hash: {HexFormat.ToHex0x(e.ContentHash)}");
         }
         Console.WriteLine();
         Console.WriteLine(hiddenCount > 0

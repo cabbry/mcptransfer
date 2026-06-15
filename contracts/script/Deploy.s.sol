@@ -20,8 +20,13 @@ contract Deploy is Script {
     function run() external {
         vm.startBroadcast();
 
-        // Order matters: addresses are nonce-derived, so Blocklist is appended
-        // LAST to keep the first three deterministic anvil addresses stable.
+        // Blocklist is appended LAST so that, FOR A GIVEN deployer-nonce start,
+        // the first three contracts keep the addresses they had before v2.
+        // NOTE: CREATE addresses are keccak(deployer, nonce) — they are only
+        // the canonical values when deploying from a FRESH deployer (nonce 0),
+        // e.g. a clean anvil. Re-running from an account that has already sent
+        // transactions shifts ALL four addresses; capture them from the
+        // broadcast/run-latest.json output rather than assuming the constants.
         FileRegistry fileRegistry = new FileRegistry();
         KeyRegistry keyRegistry = new KeyRegistry();
         AgentDirectory agentDirectory = new AgentDirectory();

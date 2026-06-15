@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Security.Cryptography;
 using System.Text.Json;
 using MCPTransfer.Core.Chain;
 using MCPTransfer.Core.Crypto;
@@ -79,13 +78,10 @@ public static class DirectoryTools
             handle,
             registered = keys.IsRegistered,
             secp256k1_fingerprint = keys.Secp256k1Compressed.Length > 0 ? Fingerprint(keys.Secp256k1Compressed) : null,
-            mlkem_hash = keys.MlKemHash.Length > 0
-                ? "0x" + Convert.ToHexString(keys.MlKemHash).ToLowerInvariant()
-                : null,
+            mlkem_hash = keys.MlKemHash.Length > 0 ? HexFormat.ToHex0x(keys.MlKemHash) : null,
             mlkem_cid = string.IsNullOrEmpty(keys.MlKemCid) ? null : keys.MlKemCid,
         }, Json);
     }
 
-    internal static string Fingerprint(ReadOnlySpan<byte> data)
-        => "sha256:" + Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant()[..16];
+    internal static string Fingerprint(ReadOnlySpan<byte> data) => HexFormat.Fingerprint(data);
 }
