@@ -96,6 +96,19 @@ public sealed class FileIpfsClient : IIpfsClient
         return await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
     }
 
+    public Task UnpinAsync(string cid, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(cid);
+        cancellationToken.ThrowIfCancellationRequested();
+        // Same path-traversal guard as FetchAsync: reject anything that isn't
+        // our 64-hex shape BEFORE building a path.
+        if (!IsValidCid(cid))
+            throw new ArgumentException(
+                $"Invalid file-store CID '{cid}' (expected 64 lowercase hex chars).", nameof(cid));
+        TryDelete(Path.Combine(_directory, cid)); // idempotent: absent file is a no-op
+        return Task.CompletedTask;
+    }
+
     /// <summary>SHA-256 hex (64 lowercase chars) of the content.</summary>
     public static string ComputeCid(ReadOnlySpan<byte> data)
         => Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();

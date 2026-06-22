@@ -133,6 +133,8 @@ public class RecipientResolverTests
             => throw new NotSupportedException();
         public Task<IReadOnlyList<FileSentEvent>> GetInboxAsync(EthereumAddress m, ulong f, ulong t, CancellationToken ct = default)
             => throw new NotSupportedException();
+        public Task<IReadOnlyList<FileSentEvent>> GetSentAsync(EthereumAddress m, ulong f, ulong t, CancellationToken ct = default)
+            => throw new NotSupportedException();
         public Task<ulong> GetLatestBlockNumberAsync(CancellationToken ct = default)
             => throw new NotSupportedException();
         public Task<FileSentEvent?> FindByCidAsync(EthereumAddress m, string c, ulong f, ulong t, CancellationToken ct = default)

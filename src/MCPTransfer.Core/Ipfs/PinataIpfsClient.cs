@@ -121,6 +121,41 @@ public sealed class PinataIpfsClient : IIpfsClient, IDisposable
         return await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task UnpinAsync(string cid, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(cid);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"{_apiBaseUrl}/pinning/unpin/{Uri.EscapeDataString(cid)}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _jwt);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+            return;
+
+        // Idempotency: if the CID is not (or no longer) pinned to this account,
+        // Pinata answers 404, or 400 with a "...NOT_PINNED..." body. Treat both
+        // as success so a re-run of `gc` doesn't error on already-cleaned CIDs.
+        var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound
+            || (response.StatusCode == HttpStatusCode.BadRequest
+                && body.Contains("NOT_PINNED", StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
+        var message =
+            $"Pinata unpin failed: HTTP {(int)response.StatusCode} {response.ReasonPhrase}. "
+            + $"Body: {Truncate(body, 200)}";
+        throw response.StatusCode switch
+        {
+            HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+                => new UnauthorizedAccessException(message),
+            _ => new HttpRequestException(message, inner: null, statusCode: response.StatusCode),
+        };
+    }
+
     private static async Task ThrowIfErrorAsync(
         HttpResponseMessage response,
         string operation,

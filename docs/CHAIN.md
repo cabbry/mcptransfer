@@ -213,6 +213,52 @@ Scénario complet : Alice envoie un fichier à `alice-bob.ai`.
 
 ---
 
+## Cycle de vie du stockage (gc / unpin)
+
+La chaîne ne stocke qu'un **pointeur** (le CID du manifest) et un hash ; les
+octets chiffrés vivent dans le plan de données (IPFS / Pinata). Sans
+nettoyage, ces blobs resteraient épinglés **à vie** et l'expéditeur paierait
+leur hébergement indéfiniment. `mcptx gc` rend le plan de données
+**éphémère** : l'expéditeur — qui a épinglé les chunks + le manifest — les
+dépingle une fois que le destinataire a eu le temps de récupérer.
+
+```
+Expéditeur                          Plan de données (IPFS/Pinata)
+   │  send  ─ pin(chunks, manifest) ──────────►  [épinglés]
+   │  FileRegistry.send(cid, hash)               (announce on-chain)
+   │                                                   │
+   │  ... le destinataire fait `receive` ...           │
+   │                                                   ▼
+   │  gc --older-than 30d / --cid <cid>  ── unpin ──►  [libérés]
+```
+
+**Points clés** (implémentation : [`StorageGc`](../src/MCPTransfer.Core/Chain/StorageGc.cs),
+CLI : `mcptx gc`) :
+
+- **Opération côté expéditeur.** Le gc utilise `FileRegistry.GetSentAsync`
+  (events `FileSent` indexés `from == moi`) — le miroir de `GetInboxAsync`. On
+  ne dépingle que ce qu'on a soi-même épinglé.
+- **Pas une garantie de confidentialité.** Dépingler retire l'hébergement,
+  pas le secret : une copie déjà aspirée par un nœud tiers reste protégée par
+  l'enveloppe hybride post-quantique, jamais par la suppression. Le gc est une
+  question de **coût/hygiène**, pas de sécurité.
+- **CIDs uniques par envoi** (fraîche aléa par transfert : clé éphémère, ct
+  KEM, nonce). Dépingler un transfert n'affecte jamais un autre.
+- **La clé ML-KEM enregistrée n'est jamais touchée.** C'est de
+  l'infrastructure permanente publiée via `KeyRegistry`, pas un transfert ;
+  elle n'apparaît jamais comme CID de manifest/chunk, et le CID est en plus
+  protégé nominativement.
+- **Idempotent + best-effort.** Un re-run saute les CIDs déjà libérés ; un
+  unpin en échec est rapporté sans interrompre le reste.
+
+**Caveat RPC public.** Le mode `--older-than` repose sur `eth_getLogs`, capé
+par les endpoints publics à une fenêtre trop étroite pour atteindre les vieux
+transferts. Pour le gc par âge sur RPC public, utiliser un endpoint managé, ou
+libérer transfert par transfert avec `--cid` (fiable partout). Détails CLI :
+[docs/CLI.md](CLI.md#mcptx-gc---older-than-dur---cid-cid---dry-run---since-block).
+
+---
+
 ## Configuration C#
 
 ```csharp

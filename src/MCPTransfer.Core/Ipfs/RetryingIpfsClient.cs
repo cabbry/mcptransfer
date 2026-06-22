@@ -35,6 +35,13 @@ public sealed class RetryingIpfsClient : IIpfsClient, IDisposable
     public Task<byte[]> FetchAsync(string cid, CancellationToken cancellationToken = default)
         => RetryAsync(token => _inner.FetchAsync(cid, token), cancellationToken);
 
+    public Task UnpinAsync(string cid, CancellationToken cancellationToken = default)
+        => RetryAsync<object?>(async token =>
+        {
+            await _inner.UnpinAsync(cid, token).ConfigureAwait(false);
+            return null;
+        }, cancellationToken);
+
     private async Task<T> RetryAsync<T>(
         Func<CancellationToken, Task<T>> operation,
         CancellationToken cancellationToken)

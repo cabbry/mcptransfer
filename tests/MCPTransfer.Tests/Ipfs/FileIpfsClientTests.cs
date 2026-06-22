@@ -78,6 +78,31 @@ public class FileIpfsClientTests : IDisposable
     }
 
     [Fact]
+    public async Task Unpin_DeletesBlob_AndIsIdempotent()
+    {
+        var client = new FileIpfsClient(_dir);
+        var cid = await client.PinAsync(RandomNumberGenerator.GetBytes(512));
+        Assert.True(File.Exists(Path.Combine(_dir, cid)));
+
+        await client.UnpinAsync(cid);
+        Assert.False(File.Exists(Path.Combine(_dir, cid)));
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => client.FetchAsync(cid));
+
+        // Re-unpinning an absent CID is a no-op, not an error.
+        await client.UnpinAsync(cid);
+    }
+
+    [Theory]
+    [InlineData("../../etc/passwd")]
+    [InlineData("..\\..\\windows\\system32")]
+    [InlineData("not-hex")]
+    public async Task Unpin_RejectsMalformedOrTraversalCid(string cid)
+    {
+        var client = new FileIpfsClient(_dir);
+        await Assert.ThrowsAsync<ArgumentException>(() => client.UnpinAsync(cid));
+    }
+
+    [Fact]
     public async Task ConcurrentPins_OfSameContent_AreIdempotent()
     {
         var client = new FileIpfsClient(_dir);

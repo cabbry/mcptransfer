@@ -69,6 +69,19 @@ public class RetryingIpfsClientTests
     }
 
     [Fact]
+    public async Task Unpin_RetriesOnTransientFailure_ThenSucceeds()
+    {
+        var inner = new ScriptedIpfsClient();
+        inner.QueueFailure(new TimeoutException("transient"));
+        inner.QueueUnpinSuccess();
+        var client = new RetryingIpfsClient(inner, FastPolicy);
+
+        await client.UnpinAsync("cid-Z");
+
+        Assert.Equal(2, inner.UnpinCallCount);
+    }
+
+    [Fact]
     public async Task Fetch_RetriesOnTransientFailure()
     {
         var inner = new ScriptedIpfsClient();
@@ -151,6 +164,7 @@ public class RetryingIpfsClientTests
             => Task.FromResult("cid");
         public Task<byte[]> FetchAsync(string cid, CancellationToken ct = default)
             => Task.FromResult(Array.Empty<byte>());
+        public Task UnpinAsync(string cid, CancellationToken ct = default) => Task.CompletedTask;
         public void Dispose() => Disposed = true;
     }
 
@@ -218,9 +232,11 @@ public class RetryingIpfsClientTests
     {
         private readonly ConcurrentQueue<Outcome> _pinScript = new();
         private readonly ConcurrentQueue<Outcome> _fetchScript = new();
+        private readonly ConcurrentQueue<Outcome> _unpinScript = new();
 
         public int PinCallCount;
         public int FetchCallCount;
+        public int UnpinCallCount;
 
         public void QueueSuccess(string cid)
             => _pinScript.Enqueue(new Outcome { PinResult = cid });
@@ -228,10 +244,14 @@ public class RetryingIpfsClientTests
         public void QueueSuccess(byte[] bytes)
             => _fetchScript.Enqueue(new Outcome { FetchResult = bytes });
 
+        public void QueueUnpinSuccess()
+            => _unpinScript.Enqueue(new Outcome());
+
         public void QueueFailure(Exception ex)
         {
             _pinScript.Enqueue(new Outcome { Failure = ex });
             _fetchScript.Enqueue(new Outcome { Failure = ex });
+            _unpinScript.Enqueue(new Outcome { Failure = ex });
         }
 
         public Task<string> PinAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
@@ -252,6 +272,14 @@ public class RetryingIpfsClientTests
             if (outcome.Failure is not null)
                 return Task.FromException<byte[]>(outcome.Failure);
             return Task.FromResult(outcome.FetchResult!);
+        }
+
+        public Task UnpinAsync(string cid, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref UnpinCallCount);
+            if (!_unpinScript.TryDequeue(out var outcome))
+                throw new InvalidOperationException("UnpinAsync called with no script entry.");
+            return outcome.Failure is not null ? Task.FromException(outcome.Failure) : Task.CompletedTask;
         }
 
         private sealed class Outcome

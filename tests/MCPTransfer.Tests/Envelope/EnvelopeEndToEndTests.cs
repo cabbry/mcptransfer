@@ -363,6 +363,12 @@ public class EnvelopeEndToEndTests
             }
             throw new KeyNotFoundException(cid);
         }
+
+        public Task UnpinAsync(string cid, CancellationToken ct = default)
+        {
+            lock (_store) { _store.Remove(cid); }
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class NonSeekableStreamWrapper : Stream
@@ -528,6 +534,12 @@ public class EnvelopeEndToEndTests
             if (_store.TryGetValue(cid, out var bytes))
                 return Task.FromResult((byte[])bytes.Clone());
             throw new KeyNotFoundException(cid);
+        }
+
+        public Task UnpinAsync(string cid, CancellationToken cancellationToken = default)
+        {
+            _store.Remove(cid);
+            return Task.CompletedTask;
         }
 
         public void Mutate(string cid, Action<byte[]> mutate)

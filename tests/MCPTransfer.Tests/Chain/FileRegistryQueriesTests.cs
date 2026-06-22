@@ -95,6 +95,10 @@ public class FileRegistryQueriesTests
                 _events.Where(e => e.BlockNumber >= fromBlock && e.BlockNumber <= toBlock).ToList());
         }
 
+        public Task<IReadOnlyList<FileSentEvent>> GetSentAsync(
+            EthereumAddress me, ulong fromBlock, ulong toBlock, CancellationToken ct = default)
+            => GetInboxAsync(me, fromBlock, toBlock, ct);
+
         public async Task<FileSentEvent?> FindByCidAsync(
             EthereumAddress me, string cid, ulong fromBlock, ulong toBlock, CancellationToken ct = default)
         {

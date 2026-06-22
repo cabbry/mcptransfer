@@ -43,6 +43,14 @@ public sealed class InMemoryIpfsClient : IIpfsClient
         throw new KeyNotFoundException($"CID '{cid}' not found in {nameof(InMemoryIpfsClient)}.");
     }
 
+    public Task UnpinAsync(string cid, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrEmpty(cid);
+        _store.TryRemove(cid, out _); // idempotent: absent CID is a no-op
+        return Task.CompletedTask;
+    }
+
     public static string ComputeCid(ReadOnlySpan<byte> data)
     {
         var hash = SHA256.HashData(data);

@@ -21,4 +21,15 @@ public interface IIpfsClient
     Task<byte[]> FetchAsync(
         string cid,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Remove the pin for <paramref name="cid"/> so the content can be
+    /// garbage-collected by the backend. Used by the transfer lifecycle to
+    /// keep storage ephemeral (a transfer is a mailbox, not an archive).
+    /// MUST be idempotent: unpinning a CID that is absent / already unpinned
+    /// completes without error (so a re-run of <c>gc</c> is safe).
+    /// </summary>
+    Task UnpinAsync(
+        string cid,
+        CancellationToken cancellationToken = default);
 }

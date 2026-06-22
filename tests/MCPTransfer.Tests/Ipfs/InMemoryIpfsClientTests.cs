@@ -97,6 +97,22 @@ public class InMemoryIpfsClientTests
     }
 
     [Fact]
+    public async Task Unpin_RemovesContent_AndIsIdempotent()
+    {
+        var client = new InMemoryIpfsClient();
+        var cid = await client.PinAsync(RandomNumberGenerator.GetBytes(64));
+        Assert.True(client.Contains(cid));
+
+        await client.UnpinAsync(cid);
+        Assert.False(client.Contains(cid));
+        Assert.Equal(0, client.Count);
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => client.FetchAsync(cid));
+
+        // Re-unpinning an absent CID is a no-op, not an error.
+        await client.UnpinAsync(cid);
+    }
+
+    [Fact]
     public void ComputeCid_StaticHelper_IsDeterministic()
     {
         var bytes = new byte[] { 1, 2, 3, 4, 5 };

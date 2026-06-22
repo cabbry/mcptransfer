@@ -44,6 +44,18 @@ public interface IFileRegistryClient
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Return all <c>FileSent</c> events SENT BY <paramref name="me"/> (indexed
+    /// <c>from</c>) within the closed block range — the mirror of
+    /// <see cref="GetInboxAsync"/> for the sender side. Used by storage
+    /// garbage-collection to find the transfers this agent pinned.
+    /// </summary>
+    Task<IReadOnlyList<FileSentEvent>> GetSentAsync(
+        EthereumAddress me,
+        ulong fromBlock,
+        ulong toBlock,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Current block height as reported by the RPC endpoint. Used to compute
     /// "from the last N blocks" sliding windows for <see cref="GetInboxAsync"/>.
     /// </summary>

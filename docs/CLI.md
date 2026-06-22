@@ -161,6 +161,50 @@ Fetch the signed manifest at `<cid>` from IPFS, verify its signature
 and per-chunk AEAD tags, atomically decrypt the plaintext to `<PATH>`
 (via `.tmp` + rename — failure leaves no partial file).
 
+### `mcptx gc [--older-than DUR] [--cid CID]... [--dry-run] [--since BLOCK]`
+
+Release (unpin) the IPFS content of transfers **you sent**, so the data plane
+stays an ephemeral mailbox rather than a permanent archive — "files don't live
+forever". The sender pinned the chunks + manifest, so the sender runs `gc` to
+let them expire once recipients have had time to fetch. This unpins; it is not
+a confidentiality control — copies that already escaped to third-party nodes
+stay protected by the hybrid-PQC envelope, not by deletion.
+
+Two ways to choose what to release (combinable):
+
+| Mode | Selects |
+|------|---------|
+| `--older-than DUR` | Your `FileSent` transfers announced more than `DUR` ago. `DUR` is an integer + unit: `30d`, `12h`, `90m`, `3600s`. Scans the chain for events indexed `from = you`. |
+| `--cid CID` | A specific manifest CID you already know is delivered. Repeatable. No chain scan — **reliable on any RPC**. |
+
+`--dry-run` prints exactly what would be released without unpinning anything —
+**run it first**. `--since BLOCK` sets the start block for the age scan.
+
+Your own registered ML-KEM key blob (published via `KeyRegistry`) is always
+excluded: `gc` only ever targets `FileSent` manifest + chunk CIDs, which never
+include it, and the key CID is additionally protected by name.
+
+```sh
+# Preview what would be released for transfers older than 30 days
+mcptx gc --older-than 30d --dry-run
+
+# Actually release them
+mcptx gc --older-than 30d
+
+# Release one known transfer by its manifest CID (works on public RPC)
+mcptx gc --cid bafy...
+```
+
+> **Public-RPC caveat.** `--older-than` relies on `eth_getLogs`, which public
+> endpoints (e.g. Amoy's) cap to a narrow block window — too narrow to reach
+> transfers that are genuinely old. For age-based gc on a public RPC, use a
+> managed endpoint, or release transfers individually with `--cid` (always
+> reliable). The command says so and exits non-zero if the scan is capped and
+> no `--cid` was given.
+
+Unpinning is idempotent and best-effort: a re-run skips already-released CIDs,
+and a failed unpin is reported (non-zero exit) without aborting the rest.
+
 ---
 
 ## End-to-end flow (Alice → Bob, anvil profile)

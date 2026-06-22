@@ -93,25 +93,42 @@ public sealed class FileRegistryClient : IFileRegistryClient
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<FileSentEvent>> GetInboxAsync(
-        EthereumAddress me,
-        ulong fromBlock,
-        ulong toBlock,
-        CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<FileSentEvent>> GetInboxAsync(
+        EthereumAddress me, ulong fromBlock, ulong toBlock, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(me);
+        // topic-2 (indexed `to` = me); topic-1 (`from`) unfiltered.
+        return QueryFileSentAsync(filterFrom: null, filterTo: me, fromBlock, toBlock, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<FileSentEvent>> GetSentAsync(
+        EthereumAddress me, ulong fromBlock, ulong toBlock, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(me);
+        // topic-1 (indexed `from` = me); topic-2 (`to`) unfiltered.
+        return QueryFileSentAsync(filterFrom: me, filterTo: null, fromBlock, toBlock, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<FileSentEvent>> QueryFileSentAsync(
+        EthereumAddress? filterFrom,
+        EthereumAddress? filterTo,
+        ulong fromBlock,
+        ulong toBlock,
+        CancellationToken cancellationToken)
+    {
         if (toBlock < fromBlock)
             throw new ArgumentOutOfRangeException(nameof(toBlock), "toBlock must be >= fromBlock.");
 
         var eventHandler = _readOnlyWeb3.Eth.GetEvent<FileRegistryAbi.FileSentEventDto>(
             _config.FileRegistryAddress.LowerHex);
 
-        // Filter on topic-2 (indexed `to` = me); leave topic-1 (`from`) unfiltered.
-        // Nethereum's CreateFilterInput expects topic values wrapped in object[]
-        // (so a single value uses `new object[] { value }`).
+        // Nethereum's CreateFilterInput expects each topic value wrapped in
+        // object[] (single value → `new object[] { value }`); null leaves that
+        // topic unfiltered.
         var filter = eventHandler.CreateFilterInput(
-            filterTopic1: (object[]?)null,
-            filterTopic2: new object[] { me.LowerHex },
+            filterTopic1: filterFrom is null ? (object[]?)null : new object[] { filterFrom.LowerHex },
+            filterTopic2: filterTo is null ? (object[]?)null : new object[] { filterTo.LowerHex },
             fromBlock: new BlockParameter(new HexBigInteger(fromBlock)),
             toBlock: new BlockParameter(new HexBigInteger(toBlock)));
 

@@ -68,6 +68,11 @@ public class FindByCidTests
             => Task.FromResult<IReadOnlyList<FileSentEvent>>(
                 _events.Where(e => e.BlockNumber >= fromBlock && e.BlockNumber <= toBlock).ToList());
 
+        public Task<IReadOnlyList<FileSentEvent>> GetSentAsync(
+            EthereumAddress me, ulong fromBlock, ulong toBlock, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyList<FileSentEvent>>(
+                _events.Where(e => e.BlockNumber >= fromBlock && e.BlockNumber <= toBlock).ToList());
+
         public Task<FileSentEvent?> FindByCidAsync(
             EthereumAddress me, string cid, ulong fromBlock, ulong toBlock, CancellationToken ct = default)
         {
