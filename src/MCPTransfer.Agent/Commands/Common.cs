@@ -42,6 +42,31 @@ internal static class Common
         return null;
     }
 
+    /// <summary>
+    /// Collect the values of a repeatable <c>--flag VALUE</c> arg (e.g.
+    /// <c>--cid A --cid B</c>). Same per-occurrence rules as
+    /// <see cref="GetFlagValue"/> (a missing value, or a following token that
+    /// looks like another flag, throws <see cref="ArgumentException"/>).
+    /// </summary>
+    public static List<string> GetFlagValues(string[] args, string flag)
+    {
+        var values = new List<string>();
+        for (var i = 1; i < args.Length; i++)
+        {
+            if (!string.Equals(args[i], flag, StringComparison.Ordinal))
+                continue;
+            if (i + 1 >= args.Length)
+                throw new ArgumentException($"Missing value after {flag}.");
+            var next = args[i + 1];
+            if (next.StartsWith("--", StringComparison.Ordinal))
+                throw new ArgumentException(
+                    $"Expected a value after {flag}, got '{next}' (which looks like another flag).");
+            values.Add(next);
+            i++;
+        }
+        return values;
+    }
+
     /// <summary>Returns true iff <paramref name="flag"/> appears in <paramref name="args"/>.</summary>
     public static bool HasFlag(string[] args, string flag)
     {
@@ -49,6 +74,18 @@ internal static class Common
             if (string.Equals(args[i], flag, StringComparison.Ordinal))
                 return true;
         return false;
+    }
+
+    /// <summary>
+    /// Parse a block number from a <paramref name="flag"/>'s value. Shared by
+    /// the commands that take a <c>--since BLOCK</c> argument. Throws
+    /// <see cref="ArgumentException"/> on a non-numeric value.
+    /// </summary>
+    public static ulong ParseBlock(string raw, string flag = "--since")
+    {
+        if (!ulong.TryParse(raw, out var v))
+            throw new ArgumentException($"{flag}: invalid block number '{raw}' (expected a non-negative integer).");
+        return v;
     }
 
     /// <summary>

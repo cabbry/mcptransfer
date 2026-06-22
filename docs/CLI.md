@@ -174,11 +174,13 @@ Two ways to choose what to release (combinable):
 
 | Mode | Selects |
 |------|---------|
-| `--older-than DUR` | Your `FileSent` transfers announced more than `DUR` ago. `DUR` is an integer + unit: `30d`, `12h`, `90m`, `3600s`. Scans the chain for events indexed `from = you`. |
+| `--older-than DUR` | Your `FileSent` transfers announced more than `DUR` ago. `DUR` is a **positive** integer + unit: `30d`, `12h`, `90m`, `3600s` (0 is rejected — it would select every transfer, including in-flight ones). Pages the chain for events indexed `from = you`. |
 | `--cid CID` | A specific manifest CID you already know is delivered. Repeatable. No chain scan — **reliable on any RPC**. |
 
 `--dry-run` prints exactly what would be released without unpinning anything —
-**run it first**. `--since BLOCK` sets the start block for the age scan.
+**run it first**. `--since BLOCK` sets the **first** block of the age scan
+(default `0`); the scan then pages forward to the chain head, so old transfers
+are reached. Raise `--since` to skip ancient history you don't need to scan.
 
 Your own registered ML-KEM key blob (published via `KeyRegistry`) is always
 excluded: `gc` only ever targets `FileSent` manifest + chunk CIDs, which never
@@ -195,12 +197,14 @@ mcptx gc --older-than 30d
 mcptx gc --cid bafy...
 ```
 
-> **Public-RPC caveat.** `--older-than` relies on `eth_getLogs`, which public
-> endpoints (e.g. Amoy's) cap to a narrow block window — too narrow to reach
-> transfers that are genuinely old. For age-based gc on a public RPC, use a
-> managed endpoint, or release transfers individually with `--cid` (always
-> reliable). The command says so and exits non-zero if the scan is capped and
-> no `--cid` was given.
+> **Public-RPC caveat.** `--older-than` pages history in wide `eth_getLogs`
+> windows. Public endpoints (e.g. Amoy's) cap that span to a few dozen blocks —
+> far too small to page millions of blocks of history in any reasonable number
+> of calls — so the age scan can't run there. On a **managed** RPC
+> (Alchemy/Infura) the wide window is accepted and the scan reaches old
+> transfers normally. For age-based gc on a public RPC, use a managed endpoint,
+> or release transfers individually with `--cid` (always reliable). The command
+> says so and exits non-zero if the scan is capped and no `--cid` was given.
 
 Unpinning is idempotent and best-effort: a re-run skips already-released CIDs,
 and a failed unpin is reported (non-zero exit) without aborting the rest.

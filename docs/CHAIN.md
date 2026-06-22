@@ -238,6 +238,15 @@ CLI : `mcptx gc`) :
 - **Opération côté expéditeur.** Le gc utilise `FileRegistry.GetSentAsync`
   (events `FileSent` indexés `from == moi`) — le miroir de `GetInboxAsync`. On
   ne dépingle que ce qu'on a soi-même épinglé.
+- **Scan par âge = pagination de l'historique.** `--older-than` parcourt
+  `[startBlock, head]` en fenêtres larges (`GetSentPagedAsync`), `startBlock`
+  valant `--since` (défaut 0). Il atteint donc réellement les vieux transferts
+  sur un RPC qui accepte ces fenêtres — contrairement à une fenêtre unique
+  ancrée sur la tête de chaîne. La résolution des manifestes et les unpins sont
+  parallélisés (borné), comme la couche I/O d'enveloppe.
+- **Intégrité du manifeste avant action.** Avant de faire confiance à la liste
+  de chunks d'un manifeste récupéré, gc vérifie sa signature ; un manifeste
+  altéré (gateway malveillant) n'est pas suivi — seul son propre pin est libéré.
 - **Pas une garantie de confidentialité.** Dépingler retire l'hébergement,
   pas le secret : une copie déjà aspirée par un nœud tiers reste protégée par
   l'enveloppe hybride post-quantique, jamais par la suppression. Le gc est une
@@ -251,10 +260,12 @@ CLI : `mcptx gc`) :
 - **Idempotent + best-effort.** Un re-run saute les CIDs déjà libérés ; un
   unpin en échec est rapporté sans interrompre le reste.
 
-**Caveat RPC public.** Le mode `--older-than` repose sur `eth_getLogs`, capé
-par les endpoints publics à une fenêtre trop étroite pour atteindre les vieux
-transferts. Pour le gc par âge sur RPC public, utiliser un endpoint managé, ou
-libérer transfert par transfert avec `--cid` (fiable partout). Détails CLI :
+**Caveat RPC public.** Le scan par âge pagine l'historique en fenêtres larges ;
+les endpoints publics capent `eth_getLogs` à quelques dizaines de blocs — bien
+trop peu pour paginer des millions de blocs en un nombre d'appels raisonnable —
+donc le scan ne tourne pas là. Sur un RPC **managé** (Alchemy/Infura) la fenêtre
+large passe et le scan atteint normalement les vieux transferts. Sinon, libérer
+transfert par transfert avec `--cid` (fiable partout). Détails CLI :
 [docs/CLI.md](CLI.md#mcptx-gc---older-than-dur---cid-cid---dry-run---since-block).
 
 ---

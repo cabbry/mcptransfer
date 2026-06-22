@@ -105,7 +105,13 @@ public sealed class FileIpfsClient : IIpfsClient
         if (!IsValidCid(cid))
             throw new ArgumentException(
                 $"Invalid file-store CID '{cid}' (expected 64 lowercase hex chars).", nameof(cid));
-        TryDelete(Path.Combine(_directory, cid)); // idempotent: absent file is a no-op
+
+        // Idempotent (absent file is a no-op) but NOT silent: a real failure to
+        // delete an existing blob (locked / permission denied) propagates so the
+        // gc layer records it rather than counting a failed unpin as success.
+        var path = Path.Combine(_directory, cid);
+        if (File.Exists(path))
+            File.Delete(path);
         return Task.CompletedTask;
     }
 

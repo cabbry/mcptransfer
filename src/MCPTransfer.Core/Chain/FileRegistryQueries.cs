@@ -63,6 +63,53 @@ public static class FileRegistryQueries
     }
 
     /// <summary>
+    /// Scan <see cref="IFileRegistryClient.GetSentAsync"/> across the full
+    /// closed range [<paramref name="fromBlock"/>, <paramref name="toBlock"/>]
+    /// by paging FORWARD in <paramref name="windowSize"/>-block windows, so a
+    /// genuinely old transfer is reached (unlike a single head-anchored
+    /// window). Unlike the shrinking-window helpers above this does NOT narrow
+    /// on failure: a provider that caps <c>eth_getLogs</c> below
+    /// <paramref name="windowSize"/> throws, and the caller reports that the
+    /// historical scan needs a managed RPC (shrinking to a ~45-block window
+    /// over millions of blocks would be tens of thousands of calls).
+    /// </summary>
+    public static async Task<IReadOnlyList<FileSentEvent>> GetSentPagedAsync(
+        this IFileRegistryClient fileRegistry,
+        EthereumAddress me,
+        ulong fromBlock,
+        ulong toBlock,
+        ulong windowSize,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(fileRegistry);
+        ArgumentNullException.ThrowIfNull(me);
+        if (windowSize == 0)
+            throw new ArgumentOutOfRangeException(nameof(windowSize), "windowSize must be positive.");
+        if (toBlock < fromBlock)
+            return Array.Empty<FileSentEvent>();
+
+        var all = new List<FileSentEvent>();
+        var winFrom = fromBlock;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            // Upper bound for this window = min(winFrom + windowSize-1, toBlock).
+            // Computing winFrom+span only when it cannot exceed toBlock keeps it
+            // overflow-safe (toBlock - winFrom is always valid: winFrom <= toBlock).
+            var span = windowSize - 1;
+            var winTo = (toBlock - winFrom < span) ? toBlock : winFrom + span;
+
+            var batch = await fileRegistry.GetSentAsync(me, winFrom, winTo, cancellationToken).ConfigureAwait(false);
+            all.AddRange(batch);
+
+            if (winTo >= toBlock)
+                break;
+            winFrom = winTo + 1;
+        }
+        return all;
+    }
+
+    /// <summary>
     /// Run <paramref name="query"/> over [<paramref name="fromBlock"/>,
     /// <paramref name="latestBlock"/>]; on a non-cancellation failure (typically
     /// the provider's <c>eth_getLogs</c> range cap) retry over each strictly

@@ -60,6 +60,35 @@ public class FileRegistryQueriesTests
     }
 
     [Fact]
+    public async Task GetSentPaged_PagesForwardAcrossHistory_AndAggregates()
+    {
+        // Three sent events spread across a wide history; window of 100 forces
+        // multiple forward pages. All three must be found (the bug this guards:
+        // a single head-anchored window never reaches the old ones).
+        var fake = new RangeCappedRegistry(maxSpan: 1_000,
+            new[] { Ev("old", 5), Ev("mid", 250), Ev("recent", 980) }) { Latest = 1_000 };
+
+        var events = await fake.GetSentPagedAsync(Me, fromBlock: 0, toBlock: 1_000, windowSize: 100);
+
+        Assert.Equal(3, events.Count);
+        Assert.Contains(events, e => e.Cid == "old" && e.BlockNumber == 5);
+        Assert.Contains(events, e => e.Cid == "recent" && e.BlockNumber == 980);
+        Assert.Equal(11, fake.Calls); // ceil(1001 / 100) windows
+    }
+
+    [Fact]
+    public async Task GetSentPaged_PropagatesProviderCap_DoesNotShrink()
+    {
+        // windowSize exceeds the provider's getLogs cap → the first page throws
+        // and the error surfaces (no silent shrink to thousands of tiny calls).
+        var fake = new RangeCappedRegistry(maxSpan: 50, new[] { Ev("x", 10) }) { Latest = 100_000 };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fake.GetSentPagedAsync(Me, fromBlock: 0, toBlock: 100_000, windowSize: 50_000));
+        Assert.Equal(1, fake.Calls);
+    }
+
+    [Fact]
     public async Task GetInbox_WideRangeRejected_RetriesNarrow_AndReportsShrunkWindow()
     {
         var fake = new RangeCappedRegistry(maxSpan: 500, new[] { Ev("cid-A", 9_950) }) { Latest = 10_000 };

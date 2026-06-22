@@ -25,7 +25,7 @@ internal static class InboxCommand
         {
             latest = await chain.FileRegistry.GetLatestBlockNumberAsync(ct).ConfigureAwait(false);
             var sinceFlag = Common.GetFlagValue(args, "--since");
-            ulong? since = sinceFlag is not null ? ParseBlock(sinceFlag) : null;
+            ulong? since = sinceFlag is not null ? Common.ParseBlock(sinceFlag) : null;
             // Shared window logic: guards against a --since past the chain head
             // (no unsigned underflow) and the over-wide span the RPC would reject.
             (fromBlock, latest) = InboxWindow.Compute(latest, since);
@@ -99,12 +99,5 @@ internal static class InboxCommand
         Console.WriteLine("  Decrypt one with:");
         Console.WriteLine("    mcptx receive <cid> --out PATH --expect-hash <content hash>");
         return Common.ExitSuccess;
-    }
-
-    private static ulong ParseBlock(string raw)
-    {
-        if (!ulong.TryParse(raw, out var v))
-            throw new ArgumentException($"--since: invalid block number '{raw}' (expected a non-negative integer).");
-        return v;
     }
 }

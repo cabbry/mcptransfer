@@ -124,6 +124,7 @@ public sealed class PinataIpfsClient : IIpfsClient, IDisposable
     public async Task UnpinAsync(string cid, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(cid);
+        cancellationToken.ThrowIfCancellationRequested();
 
         using var request = new HttpRequestMessage(
             HttpMethod.Delete,

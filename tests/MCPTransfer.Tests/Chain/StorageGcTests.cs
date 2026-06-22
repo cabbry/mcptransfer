@@ -138,18 +138,42 @@ public class StorageGcTests
         var oldTs = DateTimeOffset.FromUnixTimeSeconds(1_600_000_000); // older
         var recentTs = DateTimeOffset.FromUnixTimeSeconds(1_800_000_000); // newer
         var cutoff = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
+        var recipient = AgentIdentity.Generate().Address;
 
         var registry = new ScriptedSentRegistry(new[]
         {
-            Sent(me, old.ManifestCid, oldTs, 10),
+            Sent(me, old.ManifestCid, oldTs, 10, to: recipient),
             Sent(me, recent.ManifestCid, recentTs, 20),
         });
 
-        var plan = await StorageGc.PlanByAgeAsync(registry, ipfs, me, cutoff, fromBlock: 0, latestBlock: 100);
+        var plan = await StorageGc.PlanByAgeAsync(registry, ipfs, me, cutoff, fromBlock: 0, toBlock: 100);
 
         var target = Assert.Single(plan);
         Assert.Equal(old.ManifestCid, target.ManifestCid);
         Assert.Equal(old.ChunkCids, target.ChunkCids);
+        Assert.Equal(recipient, target.Recipient); // by-age recipient comes from the FileSent `to`
+    }
+
+    [Fact]
+    public async Task PlanByCids_TamperedManifest_IsNotTrusted()
+    {
+        var ipfs = new InMemoryIpfsClient();
+        var (manifestCid, _, _, _) = await PinTransferAsync(ipfs, chunkCount: 2);
+
+        // Pin a byte-flipped copy of the manifest under its own CID. Whether the
+        // tamper breaks JSON parsing or just the signature, gc must NOT trust its
+        // chunk list (defends against a gateway returning altered bytes).
+        var good = await ipfs.FetchAsync(manifestCid);
+        var tampered = (byte[])good.Clone();
+        tampered[good.Length / 2] ^= 0xFF;
+        var tamperedCid = await ipfs.PinAsync(tampered);
+
+        var plan = await StorageGc.PlanByCidsAsync(ipfs, new[] { tamperedCid });
+
+        var target = Assert.Single(plan);
+        Assert.False(target.ManifestResolved);
+        Assert.Empty(target.ChunkCids);
+        Assert.Equal(tamperedCid, target.ManifestCid); // its own pin is still releasable
     }
 
     [Fact]
@@ -188,8 +212,9 @@ public class StorageGcTests
 
     // --- helpers ---
 
-    private static FileSentEvent Sent(EthereumAddress from, string cid, DateTimeOffset ts, ulong block)
-        => new(From: from, To: AgentIdentity.Generate().Address, Cid: cid,
+    private static FileSentEvent Sent(
+        EthereumAddress from, string cid, DateTimeOffset ts, ulong block, EthereumAddress? to = null)
+        => new(From: from, To: to ?? AgentIdentity.Generate().Address, Cid: cid,
                ContentHash: new byte[32], Timestamp: ts, TransactionHash: "0x", BlockNumber: block, LogIndex: 0);
 
     /// <summary>IFileRegistryClient that serves a fixed sent-event set from
