@@ -218,7 +218,7 @@ The agent identity file at rest supports passphrase encryption (Argon2id, RFC 91
 
 ## 11. Reference Implementation and Live Validation
 
-The protocol is not a paper design. A complete reference implementation exists (.NET 10 / C# with BouncyCastle for ML-KEM/ML-DSA, ~250 lines of Solidity; source available to reviewers on request):
+The protocol is not a paper design. A complete reference implementation exists, open-source at **https://github.com/cabbry/mcptransfer** (.NET 10 / C# with BouncyCastle for ML-KEM/ML-DSA, ~250 lines of Solidity):
 
 - **Four contracts deployed on a public EVM testnet** (Polygon Amoy), addresses pre-configured in the client.
 - **Live end-to-end validation over commodity infrastructure**: an 18 MB file encrypted into two chunks, pinned through a public IPFS pinning service (Pinata), announced on chain, then received **byte-identical** by the counterpart identity — with the client reporting the receive *corroborated against the on-chain `FileSent` content hash* and the sender reverse-resolved to its claimed handle.
@@ -267,4 +267,4 @@ Grant funding is sought specifically for the assurance track and the agnosticism
 
 ---
 
-*Contact: Jean-Romain Bouquet — cabbry@icloud.com. Reference implementation, test suites, and the live testnet deployment are available for review on request.*
+*Contact: Jean-Romain Bouquet — cabbry@icloud.com. Source, test suites, and the live testnet deployment: https://github.com/cabbry/mcptransfer.*

@@ -218,7 +218,7 @@ Le fichier d'identité de l'agent au repos supporte le chiffrement par phrase de
 
 ## 11. Implémentation de référence et validation live
 
-Le protocole n'est pas une conception sur papier. Une implémentation de référence complète existe (.NET 10 / C# avec BouncyCastle pour ML-KEM/ML-DSA, ~250 lignes de Solidity ; source disponible aux relecteurs sur demande) :
+Le protocole n'est pas une conception sur papier. Une implémentation de référence complète existe, open-source sur **https://github.com/cabbry/mcptransfer** (.NET 10 / C# avec BouncyCastle pour ML-KEM/ML-DSA, ~250 lignes de Solidity) :
 
 - **Quatre contrats déployés sur un testnet EVM public** (Polygon Amoy), adresses préconfigurées dans le client.
 - **Validation live de bout en bout sur infrastructure banalisée** : un fichier de 18 Mo chiffré en deux chunks, épinglé via un service public d'épinglage IPFS (Pinata), annoncé on-chain, puis reçu **identique à l'octet près** par l'identité destinataire — le client rapportant la réception *corroborée contre le hash de contenu du `FileSent` on-chain* et l'expéditeur résolu inversement vers son handle revendiqué.
@@ -267,4 +267,4 @@ Le financement par grant est recherché spécifiquement pour la piste d'assuranc
 
 ---
 
-*Contact : Jean-Romain Bouquet — cabbry@icloud.com. Implémentation de référence, suites de tests et déploiement testnet live disponibles pour relecture sur demande.*
+*Contact : Jean-Romain Bouquet — cabbry@icloud.com. Source, suites de tests et déploiement testnet live : https://github.com/cabbry/mcptransfer.*
