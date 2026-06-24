@@ -47,10 +47,15 @@ internal static class ClaudeDesktopConfig
     /// <summary>Resolve <see cref="ServerInvocation(string,string?,string,string)"/>
     /// for the current process.</summary>
     public static (string Command, IReadOnlyList<string> Args) ServerInvocation(string identityPath, string configPath)
-        => ServerInvocation(
-            Environment.ProcessPath ?? "mcptx",
-            Assembly.GetEntryAssembly()?.Location,
-            identityPath, configPath);
+    {
+        // Single-file-safe: never touch Assembly.Location (IL3000). The entry
+        // dll is only needed for a `dotnet <dll>` dev launch; derive it from the
+        // app base dir + entry-assembly name. In a published single-file/AOT
+        // build ProcessPath is mcptx[.exe], so the dll is never used anyway.
+        var entryName = Assembly.GetEntryAssembly()?.GetName().Name;
+        var entryDll = entryName is null ? null : Path.Combine(AppContext.BaseDirectory, entryName + ".dll");
+        return ServerInvocation(Environment.ProcessPath ?? "mcptx", entryDll, identityPath, configPath);
+    }
 
     /// <summary>Render the <c>mcpServers</c> entry as pretty JSON to paste.</summary>
     public static string Snippet(string command, IReadOnlyList<string> args, IReadOnlyDictionary<string, string> env)
