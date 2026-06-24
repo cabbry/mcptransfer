@@ -37,6 +37,47 @@ Unset variables leave the config file value untouched.
 
 ## Commands
 
+### `mcptx setup [--local] [--chain NAME] [--storage KIND] [--pinata-jwt JWT] [--ipfs-dir DIR] [--workspace DIR] [--write-claude-config] [--yes] [--force]`
+
+One guided flow that turns a blank machine into a working agent: generate the
+identity, pick a **chain** and a **storage backend**, write the config, and
+print (or, with `--write-claude-config`, merge-write) the Claude Desktop
+connector snippet. Interactive on a terminal; fully flag-driven otherwise.
+
+- `--local` — fastest first run: local anvil + file store, **no accounts, no
+  gas, no Pinata**. Non-interactive.
+- `--chain NAME` / `--storage KIND` — pick explicitly (e.g. `--chain amoy
+  --storage pinata`). The available chains and storage backends come from a
+  single catalog, so new ones appear here automatically.
+- `--write-claude-config` — merge the `mcptransfer` server entry into
+  `claude_desktop_config.json` (preserving your other servers); otherwise the
+  snippet is only printed. `--yes` runs non-interactively with defaults.
+
+The identity is never overwritten silently — pass `--force` to replace it.
+
+```sh
+mcptx setup --local                 # 2-minute local demo, nothing external
+mcptx setup                         # interactive: choose chain + storage
+mcptx setup --chain amoy --storage pinata --pinata-jwt $PINATA_JWT
+```
+
+### `mcptx doctor`
+
+Read-only diagnostics: identity, config, RPC reachability, gas balance,
+storage backend, on-chain key registration, handle, and whether Claude Desktop
+is wired up. Each blocker prints the exact command that fixes it. Exits
+non-zero if any `[FAIL]` is present (warnings are OK).
+
+```sh
+mcptx doctor
+#   [ OK ]  Identity: 0xabc...
+#   [ OK ]  Config: ~/.mcptx/config.json  (chain 80002 @ https://...)
+#   [WARN]  Gas balance: 0
+#           -> https://faucet.polygon.technology/ (Amoy POL)
+#   [WARN]  Key NOT registered on-chain
+#           -> Run 'mcptx register-key' (gas), or share your public key out-of-band.
+```
+
 ### `mcptx keygen [--out PATH] [--force]`
 
 Generate a new hybrid identity (secp256k1 + ML-KEM-768 + ML-DSA-65) and

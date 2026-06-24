@@ -76,13 +76,20 @@ MCPTransfer/
 ```powershell
 dotnet restore MCPTransfer.slnx
 dotnet build   MCPTransfer.slnx
-dotnet test    MCPTransfer.slnx      # 289 tests pass (4 anvil tests no-op without the gate)
+dotnet test    MCPTransfer.slnx      # 402 tests pass (4 anvil tests no-op without the gate)
 
-# meet the binary
-dotnet run --project src/MCPTransfer.Agent -- version
-dotnet run --project src/MCPTransfer.Agent -- keygen        # writes ~/.mcptx/identity.json
-dotnet run --project src/MCPTransfer.Agent -- whoami        # prints your address + pubkeys
+# one guided command: identity + config + Claude Desktop snippet, zero accounts
+dotnet run --project src/MCPTransfer.Agent -- setup --local
+dotnet run --project src/MCPTransfer.Agent -- doctor        # checklist of what's ready / what to fix
+dotnet run --project src/MCPTransfer.Agent -- whoami        # your address + pubkeys
 ```
+
+`setup --local` picks the local anvil profile + a file store (no Pinata, no
+gas, no faucet), generates your identity, writes the config, and prints the
+exact Claude Desktop connector snippet (add `--write-claude-config` to merge it
+in for you). `doctor` then tells you, line by line, what's wired up and what to
+fix. Run `setup` with no flags for the interactive version (choose chain +
+storage), or `setup --chain amoy --storage pinata --pinata-jwt …` for testnet.
 
 That already exercises the whole crypto stack (the test suite encrypts,
 chunks, signs, and round-trips real envelopes). For the end-to-end *on-chain*

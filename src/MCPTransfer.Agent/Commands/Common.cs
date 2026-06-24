@@ -99,7 +99,7 @@ internal static class Common
         if (!File.Exists(path))
         {
             Console.Error.WriteLine($"No config file at {path}.");
-            Console.Error.WriteLine("Run 'mcptx config init' to bootstrap one.");
+            Console.Error.WriteLine("Run 'mcptx setup' (guided) or 'mcptx config init' to bootstrap one.");
             return null;
         }
         try
@@ -128,7 +128,7 @@ internal static class Common
         if (!File.Exists(path))
         {
             Console.Error.WriteLine($"No identity file at {path}.");
-            Console.Error.WriteLine("Run 'mcptx keygen' first.");
+            Console.Error.WriteLine("Run 'mcptx setup' (guided) or 'mcptx keygen' first.");
             return null;
         }
         var passphrase = Environment.GetEnvironmentVariable(AgentIdentityFile.PassphraseEnvVar);

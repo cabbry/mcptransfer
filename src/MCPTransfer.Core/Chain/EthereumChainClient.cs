@@ -1,3 +1,7 @@
+using System.Numerics;
+using MCPTransfer.Core.Chain.Abi;
+using MCPTransfer.Core.Crypto;
+
 namespace MCPTransfer.Core.Chain;
 
 /// <summary>
@@ -51,5 +55,21 @@ public sealed class EthereumChainClient
         KeyRegistry = keyRegistry;
         AgentDirectory = agentDirectory;
         Blocklist = blocklist;
+    }
+
+    /// <summary>
+    /// Native-token balance (in wei) of <paramref name="who"/>. Used by
+    /// diagnostics to tell whether an agent can pay gas for state-changing
+    /// operations (register-key, claim, send). EVM-specific — a multi-chain
+    /// facade would surface this behind a per-chain abstraction.
+    /// </summary>
+    public async Task<BigInteger> GetNativeBalanceAsync(
+        EthereumAddress who, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(who);
+        var web3 = Web3Factory.CreateReadOnly(Config);
+        var balance = await web3.Eth.GetBalance.SendRequestAsync(who.LowerHex).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        return balance.Value;
     }
 }

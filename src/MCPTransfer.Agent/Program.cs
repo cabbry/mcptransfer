@@ -12,6 +12,7 @@ static async Task<int> RunAsync(string[] args)
     {
         return args[0].ToLowerInvariant() switch
         {
+            "setup"         => await SetupCommand.RunAsync(args),
             "keygen"        => await KeygenCommand.RunAsync(args),
             "whoami"        => await WhoamiCommand.RunAsync(args),
             "config"        => await ConfigCommand.RunAsync(args),
@@ -26,6 +27,7 @@ static async Task<int> RunAsync(string[] args)
             "inbox"         => await InboxCommand.RunAsync(args),
             "receive"       => await ReceiveCommand.RunAsync(args),
             "gc"            => await GcCommand.RunAsync(args),
+            "doctor"        => await DoctorCommand.RunAsync(args),
             "mcp-serve"     => await McpServeCommand.RunAsync(args),
             "version" or "--version" or "-v" => PrintVersion(),
             "help" or "--help" or "-h" => PrintUsage(),
@@ -43,6 +45,8 @@ static int PrintUsage()
     Console.WriteLine("mcptx - MCPTransfer agent");
     Console.WriteLine();
     Console.WriteLine("Usage:");
+    Console.WriteLine(SetupCommand.Usage);
+    Console.WriteLine();
     Console.WriteLine(KeygenCommand.Usage);
     Console.WriteLine();
     Console.WriteLine(WhoamiCommand.Usage);
@@ -68,6 +72,8 @@ static int PrintUsage()
     Console.WriteLine(ReceiveCommand.Usage);
     Console.WriteLine();
     Console.WriteLine(GcCommand.Usage);
+    Console.WriteLine();
+    Console.WriteLine(DoctorCommand.Usage);
     Console.WriteLine();
     Console.WriteLine(McpServeCommand.Usage);
     Console.WriteLine();
