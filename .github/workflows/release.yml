@@ -1,0 +1,65 @@
+# Release pipeline: on a `v*` tag, build the self-contained mcptx binary +
+# Claude Desktop .mcpb bundle for each OS and attach them to the GitHub Release.
+#
+# Self-contained = NO .NET runtime required on the user's machine. Each RID is
+# built on its native runner to avoid cross-arch ReadyToRun issues.
+name: Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write   # create/update the Release and upload assets
+
+jobs:
+  test:
+    name: .NET test (gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet test MCPTransfer.slnx -c Release --logger "console;verbosity=normal"
+
+  build:
+    name: Build ${{ matrix.rid }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+          - os: macos-latest
+            rid: osx-arm64
+          - os: ubuntu-latest
+            rid: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Resolve version from tag
+        shell: pwsh
+        run: |
+          $v = "${{ github.ref_name }}" -replace '^v', ''
+          "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build self-contained binary + .mcpb
+        shell: pwsh
+        run: ./tools/build-mcpb.ps1 -Runtime ${{ matrix.rid }} -Version $env:VERSION
+
+      - name: Attach to the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/mcptransfer-${{ env.VERSION }}-${{ matrix.rid }}-selfcontained.mcpb
+            dist/mcptx-${{ env.VERSION }}-${{ matrix.rid }}*

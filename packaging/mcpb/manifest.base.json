@@ -1,0 +1,76 @@
+{
+  "manifest_version": "0.2",
+  "name": "mcptransfer",
+  "display_name": "MCPTransfer",
+  "version": "0.0.0",
+  "description": "Trustless, permissionless, hybrid post-quantum file transfer between AI agents.",
+  "long_description": "Exposes MCPTransfer as MCP tools: resolve a recipient by handle or 0x address, fetch + verify their on-chain key commitment, encrypt a file end-to-end (hybrid secp256k1 ECDH + ML-KEM-768 KEM, chunked AES-256-GCM, dual ECDSA + ML-DSA-65 signatures), pin it to IPFS, announce it on an EVM chain, and receive/decrypt with on-chain content-hash corroboration. Self-contained build — NO .NET runtime required. Run `mcptx setup` once to create your identity + config, then point the Identity/Config/Workspace settings below at them (or `mcptx setup --write-claude-config` to wire Claude Desktop directly and skip this bundle).",
+  "author": {
+    "name": "Jean-Romain Bouquet",
+    "email": "cabbry@icloud.com"
+  },
+  "server": {
+    "type": "binary",
+    "entry_point": "server/mcptx.exe",
+    "mcp_config": {
+      "command": "${__dirname}/server/mcptx.exe",
+      "args": [
+        "mcp-serve",
+        "--identity",
+        "${user_config.identity_path}",
+        "--config",
+        "${user_config.config_path}"
+      ],
+      "env": {
+        "MCPTX_MCP_ROOT": "${user_config.workspace}",
+        "MCPTX_PASSPHRASE": "${user_config.passphrase}"
+      }
+    }
+  },
+  "tools": [
+    { "name": "whoami", "description": "This agent's address + public-key fingerprints." },
+    { "name": "resolve", "description": "Resolve a handle to its Ethereum address." },
+    { "name": "whois", "description": "Look up an agent: address, reverse handle, key registration." },
+    { "name": "inbox", "description": "List FileSent events addressed to this agent (blocked senders filtered)." },
+    { "name": "register_key", "description": "Pin the ML-KEM key to IPFS and publish the on-chain key commitment (gas)." },
+    { "name": "claim", "description": "Claim a handle for this agent (gas)." },
+    { "name": "block_sender", "description": "Block a sender on the on-chain blocklist (gas)." },
+    { "name": "unblock_sender", "description": "Remove a sender from the blocklist (gas)." },
+    { "name": "send_file", "description": "Encrypt + pin a local file for a recipient and announce it on chain (gas)." },
+    { "name": "receive_file", "description": "Fetch a CID, verify, decrypt to a local path, corroborate on chain." }
+  ],
+  "keywords": ["ipfs", "ethereum", "post-quantum", "encryption", "file-transfer", "agents"],
+  "license": "TBD",
+  "user_config": {
+    "identity_path": {
+      "type": "file",
+      "title": "Identity file",
+      "description": "Path to your agent identity JSON (created by `mcptx setup` or `mcptx keygen`), e.g. ~/.mcptx/identity.json",
+      "required": true
+    },
+    "config_path": {
+      "type": "file",
+      "title": "Config file",
+      "description": "Path to your mcptx config JSON (created by `mcptx setup` or `mcptx config init`), e.g. ~/.mcptx/config.json",
+      "required": true
+    },
+    "workspace": {
+      "type": "directory",
+      "title": "Workspace folder",
+      "description": "send_file/receive_file are confined to this folder (read + write).",
+      "required": true
+    },
+    "passphrase": {
+      "type": "string",
+      "title": "Identity passphrase (optional)",
+      "description": "Only if your identity file is encrypted (v3). Leave blank otherwise.",
+      "sensitive": true,
+      "required": false,
+      "default": ""
+    }
+  },
+  "compatibility": {
+    "platforms": ["win32"],
+    "runtimes": {}
+  }
+}

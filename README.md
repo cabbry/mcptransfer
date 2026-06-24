@@ -62,10 +62,31 @@ MCPTransfer/
 
 ## Requirements
 
-- **.NET 10 SDK** (`dotnet --version` >= 10.0) — required for everything below.
+- **.NET 10 SDK** (`dotnet --version` >= 10.0) — to build from source (the
+  Quickstart below). **Not** needed if you install a release binary (see Install).
 - **Foundry** (anvil/forge/cast) — only for the local on-chain walkthrough and
   the gated integration tests. Install: <https://getfoundry.sh>.
 - A **Pinata JWT** and an **Amoy RPC endpoint** — only for the production path.
+
+---
+
+## Install (no .NET required)
+
+Each tagged release ships a **self-contained** binary and a Claude Desktop
+`.mcpb` bundle per OS on the [Releases page](https://github.com/cabbry/mcptransfer/releases)
+— no .NET runtime to install.
+
+- **CLI:** download `mcptx-<version>-<rid>` (e.g. `mcptx-0.5.0-win-x64.exe`),
+  then `mcptx setup` to get going.
+- **Claude Desktop:** install `mcptransfer-<version>-<rid>-selfcontained.mcpb`
+  (Settings → Extensions), then point its Identity/Config/Workspace fields at
+  what `mcptx setup` created — or just run `mcptx setup --write-claude-config`
+  and skip the bundle.
+
+Build the artifacts yourself with [`tools/build-mcpb.ps1`](tools/build-mcpb.ps1)
+(`-Runtime win-x64|osx-arm64|linux-x64`, `-FrameworkDependent` for the tiny
+runtime-dependent build). Releases are produced by
+[`.github/workflows/release.yml`](.github/workflows/release.yml) on a `v*` tag.
 
 ---
 
