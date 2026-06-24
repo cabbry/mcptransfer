@@ -93,10 +93,15 @@ mcptx keygen
 # Address: 0xabc...
 ```
 
-### `mcptx whoami [--in PATH] [--full]`
+### `mcptx whoami [--in PATH] [--full] [--card [--out PATH]]`
 
 Print the local agent's address and public keys. ML-KEM public key is
 truncated by default (`--full` prints the entire 1184-byte base64).
+
+`--card` instead exports a **contact card** — a small JSON with your address +
+secp256k1 + ML-KEM public keys — to stdout (or `--out PATH`). Share it
+out-of-band and a sender can reach you with `send --to-pubkey <card>` **without
+you ever registering on-chain or paying gas** (see below).
 
 ### `mcptx config init [--profile anvil-local|amoy] [--pinata-jwt JWT] [--out PATH] [--force]`
 
@@ -160,28 +165,49 @@ Single-value lookup: handle → 0x address.
 Aggregate lookup: address ↔ handle plus both pubkey fingerprints. Useful
 to inspect whether a peer has completed registration.
 
-### `mcptx send <file> --to <handle|0xaddress> [--mime TYPE]`
+### `mcptx send <file> (--to <handle|0xaddress> | --to-pubkey <card>) [--mime TYPE]`
 
 End-to-end send:
 
-1. Resolve `--to` (handle or address).
-2. Fetch recipient pubkeys from `KeyRegistry`; verify the secp256k1
-   pubkey derives to the declared address.
-3. Encrypt `<file>` via `EnvelopeWriter` (HybridKem → chunked AES-GCM →
-   signed manifest), upload each chunk + the manifest to IPFS via the
-   configured backend.
-4. Emit a `FileSent` event on `FileRegistry` with the manifest CID and
-   its keccak-256 content hash.
+1. Resolve the recipient — either:
+   - `--to` (handle or address): fetch pubkeys from `KeyRegistry`, verify the
+     ML-KEM key against its on-chain keccak256 commitment, and check the
+     secp256k1 pubkey derives to the declared address; **or**
+   - `--to-pubkey <card>` (file path or inline JSON from `whoami --card`): use
+     the card's keys directly. The address↔secp256k1 binding is still
+     re-derived and checked; the ML-KEM key is trusted as it arrived (no
+     on-chain commitment), so the card's authenticity rests on the out-of-band
+     channel it came through. This lets you send to someone who **never
+     registered on-chain**.
+2. Encrypt `<file>` via `EnvelopeWriter` (HybridKem → chunked AES-GCM →
+   signed manifest), upload each chunk + the manifest to IPFS.
+3. Emit a `FileSent` event on `FileRegistry` with the manifest CID and its
+   keccak-256 content hash. (The **sender** pays this gas in both modes.)
 
 ```sh
 mcptx send report.pdf --to alice-ai --mime application/pdf
-# Sending 'report.pdf' to alice-ai (0xabc...)
-#   manifest CID: bafy...
-#   chunks: 1
-#   total size: 12345 bytes
-#   tx hash: 0x...
-# ✓ sent
+mcptx send report.pdf --to-pubkey alice-card.json     # alice never registered
 ```
+
+#### Gasless recipient (no on-chain writes, no Pinata account)
+
+A recipient who only **receives** needs zero gas and zero registration:
+
+```sh
+# recipient (once): generate keys + a shareable card — all local, free
+mcptx keygen
+mcptx whoami --card --out my-card.json     # share my-card.json out-of-band
+
+# sender: encrypt to the card, pin, announce (sender pays gas)
+mcptx send report.pdf --to-pubkey my-card.json
+
+# recipient: read inbox + decrypt — both are free reads, no chain writes
+mcptx inbox
+mcptx receive <cid> --out report.pdf
+```
+
+Registering on-chain (`register-key`) only buys **discoverability** (others can
+look you up by handle/address); the card hands your key over directly instead.
 
 ### `mcptx inbox [--since BLOCK]`
 

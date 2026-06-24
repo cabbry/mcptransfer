@@ -7,10 +7,13 @@ namespace MCPTransfer.Agent.Commands;
 internal static class SendCommand
 {
     public const string Usage =
-        "  mcptx send <file> --to <handle|0xaddress> [--mime TYPE]\n"
+        "  mcptx send <file> (--to <handle|0xaddress> | --to-pubkey <card>) [--mime TYPE]\n"
       + "             [--identity PATH] [--config PATH]\n"
       + "      Encrypt <file> end-to-end for the recipient, pin chunks + manifest\n"
-      + "      on IPFS, then emit a FileSent event on chain.";
+      + "      on IPFS, then emit a FileSent event on chain.\n"
+      + "      --to        : resolve + verify the recipient via the on-chain KeyRegistry.\n"
+      + "      --to-pubkey : use a contact card (from 'whoami --card') directly — lets you\n"
+      + "                    send to someone who never registered on-chain. Path or inline JSON.";
 
     public static async Task<int> RunAsync(string[] args, CancellationToken ct = default)
     {
@@ -22,8 +25,11 @@ internal static class SendCommand
             return Common.Fail($"file not found: {filePath}");
 
         var toArg = Common.GetFlagValue(args, "--to");
-        if (string.IsNullOrEmpty(toArg))
-            return Common.Fail("missing --to <handle|0xaddress>");
+        var toPubkeyArg = Common.GetFlagValue(args, "--to-pubkey");
+        if (string.IsNullOrEmpty(toArg) && string.IsNullOrEmpty(toPubkeyArg))
+            return Common.Fail("missing recipient: pass --to <handle|0xaddress> or --to-pubkey <card>.");
+        if (!string.IsNullOrEmpty(toArg) && !string.IsNullOrEmpty(toPubkeyArg))
+            return Common.Fail("pass only one of --to or --to-pubkey, not both.");
 
         var mime = Common.GetFlagValue(args, "--mime") ?? "application/octet-stream";
 
@@ -37,26 +43,37 @@ internal static class SendCommand
         if (ipfs is null)
             return Common.Fail(ipfsErr ?? "could not build IPFS client.");
 
-        // Resolve + verify the recipient: handle → address, KeyRegistry entry,
-        // ML-KEM key fetched from IPFS and checked against the on-chain
-        // keccak256 commitment, secp256k1 key checked against the address.
-        RecipientResolver.Resolved resolvedRecipient;
+        EthereumAddress recipient;
+        AgentPublicIdentity recipientPublic;
+        string label;
         try
         {
-            resolvedRecipient = await RecipientResolver
-                .ResolveAsync(chain, ipfs, toArg, ct).ConfigureAwait(false);
+            if (!string.IsNullOrEmpty(toPubkeyArg))
+            {
+                // Out-of-band path: trust the card's keys (no on-chain commitment
+                // to check), but still re-derive and verify the address↔key binding.
+                recipientPublic = LoadFromCard(toPubkeyArg);
+                recipient = recipientPublic.Address;
+                label = $"{recipient} (from contact card)";
+            }
+            else
+            {
+                // Resolve + verify via KeyRegistry: ML-KEM key fetched from IPFS and
+                // checked against the on-chain keccak256 commitment, secp256k1 key
+                // checked against the address.
+                var resolved = await RecipientResolver
+                    .ResolveAsync(chain, ipfs, toArg!, ct).ConfigureAwait(false);
+                recipient = resolved.Address;
+                recipientPublic = resolved.PublicIdentity;
+                label = resolved.Handle is null ? recipient.ToString() : $"{resolved.Handle} ({recipient})";
+            }
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException or ArgumentException)
         {
             if (ipfs is IDisposable disp) disp.Dispose();
-            return Common.Fail($"--to: {ex.Message}");
+            return Common.Fail(string.IsNullOrEmpty(toPubkeyArg) ? $"--to: {ex.Message}" : $"--to-pubkey: {ex.Message}");
         }
 
-        var recipient = resolvedRecipient.Address;
-        var recipientPublic = resolvedRecipient.PublicIdentity;
-        var label = resolvedRecipient.Handle is null
-            ? recipient.ToString()
-            : $"{resolvedRecipient.Handle} ({recipient})";
         Console.WriteLine($"Sending '{filePath}' to {label}");
         Console.WriteLine($"  mime: {mime}");
         Console.WriteLine($"  encrypting + uploading via {config.Ipfs.Kind} ...");
@@ -108,5 +125,26 @@ internal static class SendCommand
             Console.Error.WriteLine("Recipient can still fetch the CID via 'mcptx receive' if you communicate it out-of-band.");
             return Common.ExitError;
         }
+    }
+
+    /// <summary>
+    /// Load a recipient from a contact card (a file path or inline JSON) and
+    /// re-verify the address↔secp256k1 binding. The ML-KEM key is trusted as it
+    /// arrived (no on-chain commitment to check), so the card's authenticity
+    /// rests on the out-of-band channel it came through.
+    /// </summary>
+    private static AgentPublicIdentity LoadFromCard(string pathOrInline)
+    {
+        var json = File.Exists(pathOrInline) ? File.ReadAllText(pathOrInline) : pathOrInline;
+        var card = ContactCard.FromJson(json);
+        var publicIdentity = card.ToPublicIdentity();
+        var declared = EthereumAddress.FromHex(card.Address);
+        if (publicIdentity.Address != declared)
+        {
+            throw new InvalidOperationException(
+                $"contact card address {card.Address} does not match its secp256k1 key "
+                + $"(which derives to {publicIdentity.Address}). Refusing to send.");
+        }
+        return publicIdentity;
     }
 }
