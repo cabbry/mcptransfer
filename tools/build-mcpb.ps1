@@ -114,13 +114,16 @@ finally {
     $zip.Dispose()
 }
 
-# --- also drop the bare binary as a release asset ---
-$bareName = if ($isWin) { "mcptx-$Version-$Runtime.exe" } else { "mcptx-$Version-$Runtime" }
-$barePath = Join-Path $outAbs $bareName
-Copy-Item $exePath $barePath -Force
-
+# --- also drop the bare binary as a release asset, but ONLY for the standalone
+#     build: the bare download is the "no .NET needed" binary. The fwdep bare exe
+#     would otherwise overwrite it (same name) and silently need the runtime. ---
 $mcpbMB = [math]::Round((Get-Item $mcpb).Length / 1MB, 1)
 Write-Host ""
 Write-Host "Built:"
 Write-Host "  $mcpb  ($mcpbMB MB)"
-Write-Host "  $barePath"
+if (-not $FrameworkDependent) {
+    $bareName = if ($isWin) { "mcptx-$Version-$Runtime.exe" } else { "mcptx-$Version-$Runtime" }
+    $barePath = Join-Path $outAbs $bareName
+    Copy-Item $exePath $barePath -Force
+    Write-Host "  $barePath"
+}
