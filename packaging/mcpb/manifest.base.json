@@ -4,7 +4,7 @@
   "display_name": "MCPTransfer",
   "version": "0.0.0",
   "description": "Trustless, permissionless, hybrid post-quantum file transfer between AI agents.",
-  "long_description": "Exposes MCPTransfer as MCP tools: resolve a recipient by handle or 0x address, fetch + verify their on-chain key commitment, encrypt a file end-to-end (hybrid secp256k1 ECDH + ML-KEM-768 KEM, chunked AES-256-GCM, dual ECDSA + ML-DSA-65 signatures), pin it to IPFS, announce it on an EVM chain, and receive/decrypt with on-chain content-hash corroboration. Self-contained build — NO .NET runtime required. Run `mcptx setup` once to create your identity + config, then point the Identity/Config/Workspace settings below at them (or `mcptx setup --write-claude-config` to wire Claude Desktop directly and skip this bundle).",
+  "long_description": "Exposes MCPTransfer as MCP tools: resolve a recipient by handle or 0x address, fetch + verify their on-chain key commitment, encrypt a file end-to-end (hybrid secp256k1 ECDH + ML-KEM-768 KEM, chunked AES-256-GCM, dual ECDSA + ML-DSA-65 signatures), pin it to IPFS, announce it on an EVM chain, and receive/decrypt with on-chain content-hash corroboration. Run `mcptx setup` once to create your identity + config, then point the Identity/Config/Workspace settings below at them (or `mcptx setup --write-claude-config` to wire Claude Desktop directly and skip this bundle).",
   "author": {
     "name": "Jean-Romain Bouquet",
     "email": "cabbry@icloud.com"

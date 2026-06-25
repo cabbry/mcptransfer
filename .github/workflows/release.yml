@@ -53,13 +53,18 @@ jobs:
           $v = "${{ github.ref_name }}" -replace '^v', ''
           "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Build self-contained binary + .mcpb
+      - name: Build standalone (self-contained) binary + .mcpb
         shell: pwsh
         run: ./tools/build-mcpb.ps1 -Runtime ${{ matrix.rid }} -Version $env:VERSION
+
+      - name: Build lite (framework-dependent) .mcpb
+        shell: pwsh
+        run: ./tools/build-mcpb.ps1 -Runtime ${{ matrix.rid }} -Version $env:VERSION -FrameworkDependent
 
       - name: Attach to the GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/mcptransfer-${{ env.VERSION }}-${{ matrix.rid }}-selfcontained.mcpb
+            dist/mcptransfer-${{ env.VERSION }}-${{ matrix.rid }}-fwdep.mcpb
             dist/mcptx-${{ env.VERSION }}-${{ matrix.rid }}*

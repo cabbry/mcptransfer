@@ -51,7 +51,14 @@ Remove-Item -Recurse -Force $publishDir -ErrorAction SilentlyContinue
 Write-Host "Publishing $Runtime ($variant), version $Version ..."
 $publishArgs = @("publish", $proj, "-c", "Release", "-r", $Runtime, "-o", $publishDir, "-p:Version=$Version")
 if ($FrameworkDependent) {
-    $publishArgs += "--no-self-contained"
+    # Single-file too (managed dlls embedded into one small exe), just NOT the
+    # runtime — so the .mcpb is one file and stays small, but needs .NET 10.
+    # (Compression is self-contained-only: NETSDK1176, so it's omitted here.)
+    $publishArgs += @(
+        "--no-self-contained",
+        "-p:PublishSingleFile=true",
+        "-p:InvariantGlobalization=true"
+    )
 } else {
     $publishArgs += @(
         "--self-contained",
@@ -81,6 +88,13 @@ $manifest.version = $Version
 $manifest.server.entry_point = "server/$exeName"
 $manifest.server.mcp_config.command = '${__dirname}/server/' + $exeName
 $manifest.compatibility.platforms = @($platform)
+# Be honest about the runtime requirement per variant.
+$runtimeNote = if ($FrameworkDependent) {
+    "Requires the .NET 10 runtime installed. "
+} else {
+    "Self-contained build - NO .NET runtime required. "
+}
+$manifest.long_description = $runtimeNote + $manifest.long_description
 $manifestJson = $manifest | ConvertTo-Json -Depth 20
 [System.IO.File]::WriteAllText((Join-Path $stage "manifest.json"), $manifestJson)
 

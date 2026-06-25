@@ -70,23 +70,28 @@ MCPTransfer/
 
 ---
 
-## Install (no .NET required)
+## Install
 
-Each tagged release ships a **self-contained** binary and a Claude Desktop
-`.mcpb` bundle per OS on the [Releases page](https://github.com/cabbry/mcptransfer/releases)
-— no .NET runtime to install.
+Each tagged release ships per-OS assets on the
+[Releases page](https://github.com/cabbry/mcptransfer/releases). Two Claude
+Desktop `.mcpb` bundles are offered — pick one:
 
-- **CLI:** download `mcptx-<version>-<rid>` (e.g. `mcptx-0.5.0-win-x64.exe`),
-  then `mcptx setup` to get going.
-- **Claude Desktop:** install `mcptransfer-<version>-<rid>-selfcontained.mcpb`
-  (Settings → Extensions), then point its Identity/Config/Workspace fields at
-  what `mcptx setup` created — or just run `mcptx setup --write-claude-config`
-  and skip the bundle.
+| Bundle | Size | Needs .NET? | Use when |
+|--------|-----:|-------------|----------|
+| `…-selfcontained.mcpb` | ~48 MB | **no** | default — works on any machine |
+| `…-fwdep.mcpb` (lite) | ~5 MB | yes (.NET 10) | you already have the runtime (devs) |
+
+- **Claude Desktop:** install the chosen `.mcpb` (Settings → Extensions), then
+  point its Identity/Config/Workspace fields at what `mcptx setup` created — or
+  just run `mcptx setup --write-claude-config` and skip the bundle entirely.
+- **CLI:** download the standalone `mcptx-<version>-<rid>` binary (e.g.
+  `mcptx-0.5.0-win-x64.exe`), then `mcptx setup`.
 
 Build the artifacts yourself with [`tools/build-mcpb.ps1`](tools/build-mcpb.ps1)
-(`-Runtime win-x64|osx-arm64|linux-x64`, `-FrameworkDependent` for the tiny
-runtime-dependent build). Releases are produced by
-[`.github/workflows/release.yml`](.github/workflows/release.yml) on a `v*` tag.
+(`-Runtime win-x64|osx-arm64|linux-x64`; add `-FrameworkDependent` for the lite
+build). Releases are produced by
+[`.github/workflows/release.yml`](.github/workflows/release.yml) on a `v*` tag
+(both bundles, all three OSes).
 
 ---
 
