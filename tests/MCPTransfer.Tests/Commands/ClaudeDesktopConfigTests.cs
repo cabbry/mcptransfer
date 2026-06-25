@@ -26,6 +26,29 @@ public class ClaudeDesktopConfigTests
         Assert.Equal("mcp-serve", args[1]);
     }
 
+    // Path detection must be OS-agnostic: a Windows-style path is parsed the
+    // same on a Linux CI runner and vice-versa (regression: GetFileNameWithout-
+    // Extension only splits on the current OS separator).
+    [Fact]
+    public void ServerInvocation_UnixPublishedBinary_NoExtension_InvokedDirectly()
+    {
+        var (cmd, args) = ClaudeDesktopConfig.ServerInvocation(
+            "/usr/local/bin/mcptx", entryDll: "/usr/local/bin/mcptx.dll", "id.json", "config.json");
+
+        Assert.Equal("/usr/local/bin/mcptx", cmd);
+        Assert.Equal(new[] { "mcp-serve", "--identity", "id.json", "--config", "config.json" }, args);
+    }
+
+    [Fact]
+    public void ServerInvocation_UnixDotnetHost_PrependsEntryDll()
+    {
+        var (_, args) = ClaudeDesktopConfig.ServerInvocation(
+            "/usr/bin/dotnet", entryDll: "/app/mcptx.dll", "id.json", "config.json");
+
+        Assert.Equal("/app/mcptx.dll", args[0]);
+        Assert.Equal("mcp-serve", args[1]);
+    }
+
     [Fact]
     public void IsConfigured_DetectsOurServer()
     {

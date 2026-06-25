@@ -36,7 +36,7 @@ internal static class ClaudeDesktopConfig
     public static (string Command, IReadOnlyList<string> Args) ServerInvocation(
         string processPath, string? entryDll, string identityPath, string configPath)
     {
-        var fileName = Path.GetFileNameWithoutExtension(processPath);
+        var fileName = LeafNameWithoutExtension(processPath);
         var baseArgs = new List<string>();
         if (!fileName.StartsWith("mcptx", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(entryDll))
             baseArgs.Add(entryDll); // launched via the dotnet host → run the dll
@@ -55,6 +55,20 @@ internal static class ClaudeDesktopConfig
         var entryName = Assembly.GetEntryAssembly()?.GetName().Name;
         var entryDll = entryName is null ? null : Path.Combine(AppContext.BaseDirectory, entryName + ".dll");
         return ServerInvocation(Environment.ProcessPath ?? "mcptx", entryDll, identityPath, configPath);
+    }
+
+    /// <summary>
+    /// Leaf file name without extension, splitting on BOTH '/' and '\' so the
+    /// result is the same regardless of the OS running this (Path.* only treats
+    /// the current OS's separator as a separator — e.g. a Windows path parsed on
+    /// Linux would otherwise keep its drive/dir prefix).
+    /// </summary>
+    private static string LeafNameWithoutExtension(string path)
+    {
+        var slash = path.LastIndexOfAny(new[] { '/', '\\' });
+        var leaf = slash >= 0 ? path[(slash + 1)..] : path;
+        var dot = leaf.LastIndexOf('.');
+        return dot > 0 ? leaf[..dot] : leaf;
     }
 
     /// <summary>Render the <c>mcpServers</c> entry as pretty JSON to paste.</summary>
